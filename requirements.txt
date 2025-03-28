@@ -1,0 +1,10 @@
+python-telegram-bot>=20.0
+pytz
+pymongo
+python-dotenv
+sqlalchemy==2.0.23
+pymysql==1.1.0
+cryptography==41.0.5
+python-dotenv==1.0.0
+pytz==2023.3.post1
+urllib3==2.0.7

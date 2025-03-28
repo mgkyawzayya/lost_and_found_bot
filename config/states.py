@@ -1,0 +1,22 @@
+import logging
+logger = logging.getLogger(__name__)
+
+# Conversation states
+CHOOSING_REPORT_TYPE = 0
+COLLECTING_DATA = 1
+PHOTO = 2
+DESCRIPTION = 3
+SEARCHING_REPORT = 4
+SEND_MESSAGE = 5
+SEARCH_MISSING_PERSON = 6
+SEND_MESSAGE_TO_REPORTER = 7
+
+# Check state definitions
+logger.info(f"CHOOSING_REPORT_TYPE: {CHOOSING_REPORT_TYPE}")
+logger.info(f"COLLECTING_DATA: {COLLECTING_DATA}")
+logger.info(f"PHOTO: {PHOTO}")
+logger.info(f"SEARCHING_REPORT: {SEARCHING_REPORT}")
+logger.info(f"SEND_MESSAGE: {SEND_MESSAGE}")
+logger.info(f"DESCRIPTION: {DESCRIPTION}")
+logger.info(f"SEARCH_MISSING_PERSON: {SEARCH_MISSING_PERSON}")
+logger.info(f"SEND_MESSAGE_TO_REPORTER: {SEND_MESSAGE_TO_REPORTER}")
