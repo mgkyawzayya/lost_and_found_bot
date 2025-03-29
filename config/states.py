@@ -11,6 +11,7 @@ SEND_MESSAGE = 5
 DESCRIPTION = 6
 SEARCH_MISSING_PERSON = 7
 SEND_MESSAGE_TO_REPORTER = 8
+SELECT_URGENCY = 9  # Added missing state for urgency selection
 
 # Check state definitions
 logger.info(f"CHOOSING_REPORT_TYPE: {CHOOSING_REPORT_TYPE}")
@@ -22,3 +23,4 @@ logger.info(f"SEND_MESSAGE: {SEND_MESSAGE}")
 logger.info(f"DESCRIPTION: {DESCRIPTION}")
 logger.info(f"SEARCH_MISSING_PERSON: {SEARCH_MISSING_PERSON}")
 logger.info(f"SEND_MESSAGE_TO_REPORTER: {SEND_MESSAGE_TO_REPORTER}")
+logger.info(f"SELECT_URGENCY: {SELECT_URGENCY}")  # Add logging for new state
