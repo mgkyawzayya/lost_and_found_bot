@@ -39,5 +39,9 @@ VOLUNTEER_TEAMS = [
     },
 ]
 
+# Supabase configuration
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
 # Export all constants
-__all__ = ['BOT_TOKEN', 'CHANNEL_ID', 'ADMIN_IDS', 'REPORTS', 'PRIORITIES', 'VOLUNTEER_TEAMS']
+__all__ = ['BOT_TOKEN', 'CHANNEL_ID', 'ADMIN_IDS', 'REPORTS', 'PRIORITIES', 'VOLUNTEER_TEAMS', 'SUPABASE_URL', 'SUPABASE_KEY']

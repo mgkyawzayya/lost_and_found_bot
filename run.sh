@@ -7,34 +7,43 @@ echo "======================================"
 echo "Using python-telegram-bot v20+"
 echo "======================================"
 
-# Check if conda is installed
-if ! command -v conda &> /dev/null; then
-    echo "Conda is not installed. Please install Miniconda or Anaconda first."
+# Check if Python is installed
+if ! command -v python3 &> /dev/null; then
+    echo "Python 3 is not installed. Please install Python 3 first."
     exit 1
 fi
 
-# Check if the environment exists
-if ! conda env list | grep -q "lost_and_found_bot"; then
-    echo "Setting up conda environment for the first time..."
-    conda env create -f environment.yml
+# Define environment directory
+VENV_DIR="venv"
+
+# Check if the virtual environment exists
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Setting up Python virtual environment for the first time..."
+    python3 -m venv $VENV_DIR
     if [ $? -ne 0 ]; then
-        echo "Failed to create conda environment. Please check environment.yml file."
+        echo "Failed to create virtual environment."
         exit 1
     fi
     echo "Environment created successfully!"
+    
+    # Activate the environment and install dependencies
+    source $VENV_DIR/bin/activate
+    pip install -r requirements.txt
+    if [ $? -ne 0 ]; then
+        echo "Failed to install dependencies. Please check requirements.txt file."
+        deactivate
+        exit 1
+    fi
 else
     echo "Environment already exists. Updating dependencies..."
-    conda env update -f environment.yml
+    source $VENV_DIR/bin/activate
+    pip install -r requirements.txt
 fi
 
-# Activate the environment and run the bot
-echo "Starting the bot..."
-eval "$(conda shell.bash hook)"
-conda activate lost_and_found_bot
-
 # Run the bot application
+echo "Starting the bot..."
 python app.py
 
 # Deactivate the environment when done
-conda deactivate
+deactivate
 echo "Bot stopped. Environment deactivated."

@@ -6,4 +6,6 @@ dependencies:
   - python=3.12
   - pip
   - pip:
+    - psycopg2-binary>=2.9.0
+    - supabase
     - -r requirements.txt

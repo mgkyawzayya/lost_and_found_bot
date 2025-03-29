@@ -101,6 +101,34 @@ The project is organized with a modular architecture:
 
 ---
 
+## Supabase Setup
+
+1. Create a Supabase account at https://supabase.io
+2. Create a new project
+3. Go to SQL Editor and run the schema from `database/schema.sql`
+4. Go to Settings > API and copy your Supabase URL and anon/public key
+5. Add these to your environment variables:
+   ```
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_KEY=your_supabase_api_key
+   ```
+
+## Installation
+
+1. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+2. Configure your environment variables in `config/constants.py` or use a `.env` file.
+
+3. Run the bot:
+   ```
+   python app.py
+   ```
+
+---
+
 ## Disaster Response Best Practices
 
 When using this bot during emergencies:
