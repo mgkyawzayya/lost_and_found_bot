@@ -851,10 +851,9 @@ async def send_report_to_channel(bot, user_data: dict, safe_message: str) -> Non
         logger.info(f"Report sent to channel {CHANNEL_ID}")
     except Exception as e:
         logger.error(f"Failed to send report to channel: {str(e)}")
-
 async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Search for a report by ID with improved formatting"""
-    report_id = update.message.text.strip()
+    report_id = update.message.text.strip().upper()  # Convert to uppercase for consistency
     
     try:
         logger.info(f"Searching for report with ID: {report_id}")
@@ -895,7 +894,26 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 # If there's a photo, send it too
                 if memory_report.get('photo'):
                     await update.message.reply_photo(memory_report['photo'])
-                    
+                
+                # Restore main menu instead of ending the conversation
+                keyboard = [
+                    ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+                    ['Request Rescue', 'Offer Help'],
+                    ['Search Reports by ID', 'Contact Report Submitter'],
+                    ['Search for Missing Person']
+                ]
+                reply_markup = ReplyKeyboardMarkup(
+                    keyboard, 
+                    one_time_keyboard=False,  # Persistent menu
+                    resize_keyboard=True
+                )
+                
+                await update.message.reply_text(
+                    "What would you like to do next?\n\n"
+                    "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+                    reply_markup=reply_markup
+                )
+                
                 return CHOOSING_REPORT_TYPE
             
             logger.info(f"No report found with ID: {report_id}")
@@ -903,7 +921,27 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 "❌ No report found with that ID. Please check and try again.\n\n"
                 "ထို ID ဖြင့် အစီရင်ခံစာ မတွေ့ရှိပါ။ စစ်ဆေးပြီး ထပ်စမ်းကြည့်ပါ။"
             )
-            return ConversationHandler.END
+            
+            # Restore main menu instead of ending the conversation
+            keyboard = [
+                ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+                ['Request Rescue', 'Offer Help'],
+                ['Search Reports by ID', 'Contact Report Submitter'],
+                ['Search for Missing Person']
+            ]
+            reply_markup = ReplyKeyboardMarkup(
+                keyboard, 
+                one_time_keyboard=False,  # Persistent menu
+                resize_keyboard=True
+            )
+            
+            await update.message.reply_text(
+                "What would you like to do next?\n\n"
+                "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+                reply_markup=reply_markup
+            )
+            
+            return CHOOSING_REPORT_TYPE
         
         # Log the report data structure for debugging
         logger.info(f"Report found: {type(report)} with keys: {report.keys() if isinstance(report, dict) else 'Not a dict'}")
@@ -955,9 +993,24 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                     "⚠️ Could not display the photo associated with this report."
                 )
         
-        # Show main menu after displaying report
-        await asyncio.sleep(2)
-        await show_main_menu(update, context)
+        # Restore main menu instead of ending the conversation
+        keyboard = [
+            ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+            ['Request Rescue', 'Offer Help'],
+            ['Search Reports by ID', 'Contact Report Submitter'],
+            ['Search for Missing Person']
+        ]
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard, 
+            one_time_keyboard=False,  # Persistent menu
+            resize_keyboard=True
+        )
+        
+        await update.message.reply_text(
+            "What would you like to do next?\n\n"
+            "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+            reply_markup=reply_markup
+        )
         
         return CHOOSING_REPORT_TYPE
     except Exception as e:
@@ -965,7 +1018,27 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await update.message.reply_text(
             "❌ An error occurred while retrieving the report information. Please try again later."
         )
-        return ConversationHandler.END
+        
+        # Restore main menu even after error
+        keyboard = [
+            ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+            ['Request Rescue', 'Offer Help'],
+            ['Search Reports by ID', 'Contact Report Submitter'],
+            ['Search for Missing Person']
+        ]
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard, 
+            one_time_keyboard=False,  # Persistent menu
+            resize_keyboard=True
+        )
+        
+        await update.message.reply_text(
+            "What would you like to do next?\n\n"
+            "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+            reply_markup=reply_markup
+        )
+        
+        return CHOOSING_REPORT_TYPE
 
 async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Send a message to the submitter of a report."""
@@ -987,7 +1060,27 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
                             await update.message.reply_text(
                                 f"❌ No user ID associated with in-memory report {report_id}. Cannot send message."
                             )
-                            return ConversationHandler.END
+                            
+                            # Restore main menu instead of ending the conversation
+                            keyboard = [
+                                ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+                                ['Request Rescue', 'Offer Help'],
+                                ['Search Reports by ID', 'Contact Report Submitter'],
+                                ['Search for Missing Person']
+                            ]
+                            reply_markup = ReplyKeyboardMarkup(
+                                keyboard, 
+                                one_time_keyboard=False,  # Persistent menu
+                                resize_keyboard=True
+                            )
+                            
+                            await update.message.reply_text(
+                                "What would you like to do next?\n\n"
+                                "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+                                reply_markup=reply_markup
+                            )
+                            
+                            return CHOOSING_REPORT_TYPE
                             
                         context.user_data['contact_report_id'] = report_id
                         context.user_data['contact_user_id'] = user_id
@@ -1002,7 +1095,27 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
                     await update.message.reply_text(
                         f"❌ No report found with ID: {report_id}. Please check the ID and try again."
                     )
-                    return ConversationHandler.END
+                    
+                    # Restore main menu instead of ending the conversation
+                    keyboard = [
+                        ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+                        ['Request Rescue', 'Offer Help'],
+                        ['Search Reports by ID', 'Contact Report Submitter'],
+                        ['Search for Missing Person']
+                    ]
+                    reply_markup = ReplyKeyboardMarkup(
+                        keyboard, 
+                        one_time_keyboard=False,  # Persistent menu
+                        resize_keyboard=True
+                    )
+                    
+                    await update.message.reply_text(
+                        "What would you like to do next?\n\n"
+                        "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+                        reply_markup=reply_markup
+                    )
+                    
+                    return CHOOSING_REPORT_TYPE
                 
                 # Report found in database
                 user_id = report.get('user_id')
@@ -1011,7 +1124,27 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
                     await update.message.reply_text(
                         f"❌ No user ID associated with report {report_id}. Cannot send message to the submitter."
                     )
-                    return ConversationHandler.END
+                    
+                    # Restore main menu instead of ending the conversation
+                    keyboard = [
+                        ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+                        ['Request Rescue', 'Offer Help'],
+                        ['Search Reports by ID', 'Contact Report Submitter'],
+                        ['Search for Missing Person']
+                    ]
+                    reply_markup = ReplyKeyboardMarkup(
+                        keyboard, 
+                        one_time_keyboard=False,  # Persistent menu
+                        resize_keyboard=True
+                    )
+                    
+                    await update.message.reply_text(
+                        "What would you like to do next?\n\n"
+                        "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+                        reply_markup=reply_markup
+                    )
+                    
+                    return CHOOSING_REPORT_TYPE
                     
                 context.user_data['contact_report_id'] = report_id
                 context.user_data['contact_user_id'] = user_id
@@ -1027,7 +1160,27 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
                 await update.message.reply_text(
                     f"❌ Error finding report with ID: {report_id}. Please try again later."
                 )
-                return ConversationHandler.END
+                
+                # Restore main menu even after error
+                keyboard = [
+                    ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+                    ['Request Rescue', 'Offer Help'],
+                    ['Search Reports by ID', 'Contact Report Submitter'],
+                    ['Search for Missing Person']
+                ]
+                reply_markup = ReplyKeyboardMarkup(
+                    keyboard, 
+                    one_time_keyboard=False,  # Persistent menu
+                    resize_keyboard=True
+                )
+                
+                await update.message.reply_text(
+                    "What would you like to do next?\n\n"
+                    "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+                    reply_markup=reply_markup
+                )
+                
+                return CHOOSING_REPORT_TYPE
         else:
             # Get the message content
             message_text = update.message.text
@@ -1053,15 +1206,57 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
                     "❌ There was an error sending your message. The user may have blocked the bot."
                 )
             
-            # Clear the data and end the conversation
-            context.user_data.clear()
-            return ConversationHandler.END
+            # Clear specific data but keep the conversation active
+            for key in list(context.user_data.keys()):
+                if key not in ['in_conversation']:
+                    context.user_data.pop(key, None)
+            
+            # Restore main menu instead of ending the conversation
+            keyboard = [
+                ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+                ['Request Rescue', 'Offer Help'],
+                ['Search Reports by ID', 'Contact Report Submitter'],
+                ['Search for Missing Person']
+            ]
+            reply_markup = ReplyKeyboardMarkup(
+                keyboard, 
+                one_time_keyboard=False,  # Persistent menu
+                resize_keyboard=True
+            )
+            
+            await update.message.reply_text(
+                "What would you like to do next?\n\n"
+                "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+                reply_markup=reply_markup
+            )
+            
+            return CHOOSING_REPORT_TYPE
     except Exception as e:
         logger.error(f"Unexpected error in send_message_to_submitter: {str(e)}", exc_info=True)
         await update.message.reply_text(
             "❌ An unexpected error occurred. Please try again or use /start to begin a new operation."
         )
-        return ConversationHandler.END
+        
+        # Restore main menu even after error
+        keyboard = [
+            ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+            ['Request Rescue', 'Offer Help'],
+            ['Search Reports by ID', 'Contact Report Submitter'],
+            ['Search for Missing Person']
+        ]
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard, 
+            one_time_keyboard=False,  # Persistent menu
+            resize_keyboard=True
+        )
+        
+        await update.message.reply_text(
+            "What would you like to do next?\n\n"
+            "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+            reply_markup=reply_markup
+        )
+        
+        return CHOOSING_REPORT_TYPE
 
 async def search_missing_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Search for missing persons based on name or details"""

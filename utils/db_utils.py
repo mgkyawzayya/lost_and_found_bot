@@ -733,47 +733,28 @@ async def search_missing_people(search_term: str) -> List[Dict[str, Any]]:
         return []
 
 async def get_report(report_id: str) -> Optional[Dict[str, Any]]:
-    """Async wrapper around get_report_by_id for use in async functions"""
+    """Get a report by ID with case-insensitive matching"""
     try:
-        # Try using Supabase
+        # Try using Supabase with case-insensitive matching
         if is_db_ready():
-            response = supabase.table(pg_table).select('*').eq('report_id', report_id).execute()
-            
-            if response and hasattr(response, 'data') and len(response.data) > 0:
-                logger.info(f"Report found with ID: {report_id} via Supabase")
-                return response.data[0]
+            try:
+                # Use ILIKE for case-insensitive matching
+                response = supabase.table(pg_table).select('*').filter('report_id', 'ilike', report_id).execute()
+                
+                if response and hasattr(response, 'data') and len(response.data) > 0:
+                    logger.info(f"Report found with ID: {report_id} via Supabase case-insensitive match")
+                    return response.data[0]
+            except Exception as supabase_error:
+                logger.error(f"Supabase error: {str(supabase_error)}")
         
-        # Fall back to direct PostgreSQL connection
-        conn = get_postgres_connection()
-        if conn is None:
-            logger.error("Could not establish PostgreSQL connection")
-            return None
-            
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        # Check in-memory storage
+        # Case-insensitive search in memory storage
+        for stored_id, report in REPORTS.items():
+            if stored_id.upper() == report_id.upper():
+                logger.info(f"Report found with ID: {stored_id} in memory (case-insensitive)")
+                return report
         
-        # SQL query to get the report
-        query = f"""
-        SELECT * FROM {pg_schema}.{pg_table}
-        WHERE report_id = %s;
-        """
-        
-        # Execute the query
-        cursor.execute(query, (report_id,))
-        
-        # Get the result
-        result = cursor.fetchone()
-        cursor.close()
-        
-        if result:
-            logger.info(f"Report found with ID: {report_id} via PostgreSQL")
-            return dict(result)
-        
-        # If no results from database, check in-memory storage
-        if REPORTS and report_id in REPORTS:
-            logger.info(f"Report found with ID: {report_id} in memory storage")
-            return REPORTS[report_id]
-            
-        logger.info(f"No report found with ID: {report_id}")
+        logger.info(f"No report found with ID: {report_id} in any storage")
         return None
         
     except Exception as e:

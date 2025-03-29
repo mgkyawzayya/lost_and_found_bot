@@ -148,7 +148,7 @@ if hasattr(signal, 'SIGQUIT'):
     signal.signal(signal.SIGQUIT, signal_handler)  # Quit signal
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Start the conversation and ask for item type."""
+    """Start the conversation and display a persistent menu."""
     # Set a flag to indicate we're in a conversation
     context.user_data['in_conversation'] = True
     
@@ -162,13 +162,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         connection_warning = "⚠️ Database connectivity issues detected. Some features may be limited. ⚠️\n\n" \
                             "ချိတ်ဆက်မှုပြဿနာအချို့ရှိနေပါသည်။ လုပ်ဆောင်ချက်အချို့ ကန့်သတ်ထားနိုင်ပါသည်။"
     
+    # Create a persistent keyboard with main menu options
     keyboard = [
         ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
         ['Request Rescue', 'Offer Help'],
         ['Search Reports by ID', 'Contact Report Submitter'],
         ['Search for Missing Person']  # New option
     ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    
+    # Set one_time_keyboard=False to make the keyboard persistent
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard, 
+        one_time_keyboard=False,  # Changed to False to make it persistent
+        resize_keyboard=True
+    )
 
     await update.message.reply_text(
         "🚨 EARTHQUAKE EMERGENCY RESPONSE 🚨\n\n"
@@ -181,10 +188,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         reply_markup=reply_markup
     )
     
-    logger.info("User started the bot. Waiting for menu selection.")
+    logger.info("User started the bot with persistent menu active.")
     logger.info(f"Returning state CHOOSING_REPORT_TYPE: {CHOOSING_REPORT_TYPE}")
     
-    return CHOOSING_REPORT_TYPE  # Ensure the bot transitions to the correct state
+    return CHOOSING_REPORT_TYPE
 
 # Add a new function to handle the initial search request
 async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -219,16 +226,39 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         # Handle normal report types
         return await choose_report_type(update, context)
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Cancel the conversation."""
-    await update.message.reply_text(
-        "Operation cancelled. Use /start to begin again.\n\n"
-        "လှုပ်ရှားမှုကို ပယ်ဖျက်လိုက်ပါပြီ။ ထပ်မံစတင်လိုလျှင် /start ကိုသုံးပါ။"
+
+async def restore_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Restore the main menu after completing an operation."""
+    keyboard = [
+        ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
+        ['Request Rescue', 'Offer Help'],
+        ['Search Reports by ID', 'Contact Report Submitter'],
+        ['Search for Missing Person']
+    ]
+    
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard, 
+        one_time_keyboard=False,  # Persistent menu
+        resize_keyboard=True
     )
-    # Clear the conversation flag
-    context.user_data['in_conversation'] = False
-    context.user_data.clear()
-    return ConversationHandler.END
+
+    await update.message.reply_text(
+        "What would you like to do next?\n\n"
+        "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
+        reply_markup=reply_markup
+    )
+    
+    return CHOOSING_REPORT_TYPE
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel the current operation and return to main menu."""
+    # Clear specific operation data but keep the conversation active
+    for key in list(context.user_data.keys()):
+        if key != 'in_conversation':
+            context.user_data.pop(key)
+    
+    # Return to main menu
+    return await restore_main_menu(update, context)
 
 # Add a new global cancel handler
 async def global_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -371,7 +401,10 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, choose_report_to_contact),
             ]
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[
+            CommandHandler('cancel', cancel),
+            CommandHandler('menu', restore_main_menu)  # Add this to make /menu restore the keyboard
+        ]
     )
 
     # Add detailed debug logging - this is important!
@@ -394,7 +427,7 @@ def main():
     
     # Add these AFTER the conversation handler
     application.add_handler(CommandHandler('help', help_command))
-    application.add_handler(CommandHandler('menu', menu_command))
+    application.add_handler(CommandHandler('menu', restore_main_menu))
     application.add_handler(CommandHandler('volunteer', volunteer_info))
     application.add_handler(CommandHandler('getid', get_id))
     
