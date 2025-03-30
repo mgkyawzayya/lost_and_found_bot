@@ -331,7 +331,7 @@ def upload_photo_to_storage(photo_data: Union[str, bytes, io.BytesIO], file_name
         if not file_name:
             file_name = f"{uuid.uuid4()}.jpg"
             
-        bucket_name = os.environ.get("SUPABASE_STORAGE_BUCKET", "reports-photos")
+        bucket_name = os.environ.get("SUPABASE_STORAGE_BUCKET", "photos")
         
         # Handle different input types
         if isinstance(photo_data, str) and os.path.isfile(photo_data):
@@ -380,26 +380,17 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
     # Try using the Supabase REST API first
     try:
         if is_db_ready():
-            # Handle photo upload if present
-            photo_url = None
-            if report_data.get("photo"):
-                photo_data = report_data["photo"]
-                # Generate a unique filename based on report ID
-                filename = f"{report_data['report_id']}.jpg"
-                photo_url = upload_photo_to_storage(photo_data, filename)
-                
             # Prepare data for database
             db_data = {
                 "report_id": report_data["report_id"],
                 "report_type": report_data["report_type"],
                 "all_data": report_data["all_data"],
                 "urgency": report_data["urgency"],
-                "photo_id": report_data["photo"]  # Keep original photo_id for backward compatibility
+                "location": report_data.get("location", "Unknown"),
+                "photo_id": report_data.get("photo_id"),  # Use get to avoid KeyError
+                "photo_url": report_data.get("photo_url"),
+                "photo_path": report_data.get("photo_path")
             }
-            
-            # Only add photo_url if we have it
-            if photo_url:
-                db_data["photo_url"] = photo_url
                 
             # Add user information
             db_data.update({
@@ -407,7 +398,6 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
                 "username": telegram_user.username,
                 "first_name": telegram_user.first_name,
                 "last_name": telegram_user.last_name,
-                "location": report_data.get("location", "Unknown"),
                 "created_at": datetime.now().isoformat()
             })
             
@@ -432,7 +422,9 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
                 "report_type": report_data["report_type"],
                 "all_data": report_data["all_data"],
                 "urgency": report_data["urgency"],
-                "photo_id": report_data["photo"],
+                "photo_id": report_data.get("photo_id"),
+                "photo_url": report_data.get("photo_url"),
+                "photo_path": report_data.get("photo_path"),
                 "user_id": telegram_user.id,
                 "username": telegram_user.username,
                 "first_name": telegram_user.first_name,
@@ -447,13 +439,6 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
         
         # Prepare data for PostgreSQL
         now = datetime.now().isoformat()
-        
-        # Try to upload photo if we have Supabase but the earlier attempt failed
-        photo_url = None
-        if is_db_ready() and report_data.get("photo"):
-            photo_data = report_data["photo"]
-            filename = f"{report_data['report_id']}.jpg"
-            photo_url = upload_photo_to_storage(photo_data, filename)
         
         # Check if photo_url column exists
         try:
@@ -470,9 +455,9 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
             # SQL query with photo_url
             query = f"""
             INSERT INTO {pg_schema}.{pg_table} 
-            (report_id, report_type, all_data, urgency, photo_id, photo_url, user_id, username, first_name, last_name, 
+            (report_id, report_type, all_data, urgency, photo_id, photo_url, photo_path, user_id, username, first_name, last_name, 
             location, created_at, updated_at) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *;
             """
             params = (
@@ -480,8 +465,9 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
                 report_data["report_type"],
                 report_data["all_data"],
                 report_data["urgency"],
-                report_data["photo"],
-                photo_url,
+                report_data.get("photo_id"),  # Use get to avoid KeyError
+                report_data.get("photo_url"),
+                report_data.get("photo_path"),
                 telegram_user.id,
                 telegram_user.username,
                 telegram_user.first_name,
@@ -504,7 +490,7 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
                 report_data["report_type"],
                 report_data["all_data"],
                 report_data["urgency"],
-                report_data["photo"],
+                report_data.get("photo_id"),  # Use get to avoid KeyError
                 telegram_user.id,
                 telegram_user.username,
                 telegram_user.first_name,
@@ -535,7 +521,9 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
                 "report_type": report_data["report_type"],
                 "all_data": report_data["all_data"],
                 "urgency": report_data["urgency"],
-                "photo_id": report_data["photo"],
+                "photo_id": report_data.get("photo_id"),
+                "photo_url": report_data.get("photo_url"),
+                "photo_path": report_data.get("photo_path"),
                 "user_id": telegram_user.id,
                 "username": telegram_user.username,
                 "first_name": telegram_user.first_name,
@@ -554,7 +542,9 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
             "report_type": report_data["report_type"],
             "all_data": report_data["all_data"],
             "urgency": report_data["urgency"],
-            "photo_id": report_data["photo"],
+            "photo_id": report_data.get("photo_id"),
+            "photo_url": report_data.get("photo_url"),
+            "photo_path": report_data.get("photo_path"),
             "user_id": telegram_user.id,
             "username": telegram_user.username,
             "first_name": telegram_user.first_name,

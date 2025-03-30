@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS reports (
     urgency VARCHAR,
     location VARCHAR,
     photo_id VARCHAR,
+    photo_url VARCHAR,         -- Added for Digital Ocean S3 URL
+    photo_path VARCHAR,        -- Added for Digital Ocean S3 path
     user_id BIGINT,
     username VARCHAR,
     first_name VARCHAR,

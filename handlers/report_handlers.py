@@ -6,6 +6,10 @@ import logging
 import asyncio
 from datetime import datetime
 import pytz  # Import pytz for timezone handling
+import io
+import boto3
+from botocore.client import Config
+import os
 
 from utils.message_utils import escape_markdown_v2
 from utils.db_utils import save_report, get_report_by_id, search_reports_by_content, search_missing_people, get_report
@@ -13,8 +17,9 @@ from config.constants import PRIORITIES, CHANNEL_ID
 from config.states import (
     PHOTO, COLLECTING_DATA, SEARCHING_REPORT, DESCRIPTION, SEND_MESSAGE,
     SEARCH_MISSING_PERSON, SEND_MESSAGE_TO_REPORTER, CHOOSING_LOCATION, CHOOSING_REPORT_TYPE,
-    SELECT_URGENCY  # Make sure to add this to your states.py file
+    SELECT_URGENCY
 )
+
 # Configure logger
 logger = logging.getLogger(__name__)
 
@@ -195,17 +200,18 @@ async def select_urgency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     selected_urgency = update.message.text
     
     # Map Burmese urgency levels to English for database storage
+    # Map Burmese urgency levels to English for database storage
     urgency_map = {
-        "အလွန်အရေးပေါ်": "Critical (Medical Emergency)",
-        "အရေးပေါ်": "High (Trapped/Missing)",
-        "အသင့်အတင့်": "Medium (Safe but Separated)",
-        "သာမန်": "Low (Information Only)",
+        "အလွန်အရေးပေါ် (ဆေးကုသမှု လိုအပ်)": "Critical (Medical Emergency)",
+        "အရေးပေါ် (ပိတ်မိနေ/ပျောက်ဆုံး)": "High (Trapped/Missing)",
+        "အလယ်အလတ် (လုံခြုံသော်လည်း ကွဲကွာနေ)": "Medium (Safe but Separated)",
+        "အရေးမကြီး (သတင်းအချက်အလက်သာ)": "Low (Information Only)",
         # Keep English versions for backward compatibility
         "Critical (Medical Emergency)": "Critical (Medical Emergency)",
         "High (Trapped/Missing)": "High (Trapped/Missing)",
         "Medium (Safe but Separated)": "Medium (Safe but Separated)",
         "Low (Information Only)": "Low (Information Only)"
-    }
+    }   
     
     # Store the mapped urgency
     context.user_data['urgency'] = urgency_map.get(selected_urgency, selected_urgency)
@@ -235,18 +241,24 @@ async def finalize_report(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         user_data = context.user_data
         
-        # Prepare report data
+        # Prepare report data - Make sure all fields are properly initialized
         report_data = {
             'report_id': user_data.get('report_id', ''),
             'report_type': user_data.get('report_type', ''),
             'all_data': user_data.get('all_data', ''),
             'urgency': user_data.get('urgency', ''),
-            'photo': user_data.get('photo_id', None),
-            'location': user_data.get('location', 'Unknown')  # Ensure location is included
+            'photo_id': user_data.get('photo_id', None),  # Keep Telegram file_id
+            'photo_url': user_data.get('photo_url', None),  # Add DO Spaces URL
+            'photo_path': user_data.get('photo_path', None),  # Add DO Spaces path
+            'location': user_data.get('location', 'Unknown')
         }
         
         # Get telegram user object
         telegram_user = update.effective_user
+        
+        # Log the data being saved for debugging
+        logger.info(f"Saving report with ID: {report_data['report_id']}")
+        logger.debug(f"Report data: {report_data}")
         
         try:
             # Save to database
@@ -326,38 +338,111 @@ async def finalize_report(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             
             return CHOOSING_REPORT_TYPE
         except Exception as e:
-            logger.error(f"Error saving report: {str(e)}")
+            logger.error(f"Error saving report: {str(e)}", exc_info=True)
             await update.message.reply_text(
                 "❌ Error saving your report. Please try again later.\n\n"
                 "သင့်အစီရင်ခံစာကို မသိမ်းဆည်းနိုင်ပါ။ နောက်မှ ထပ်စမ်းကြည့်ပါ။"
             )
             return ConversationHandler.END
     except Exception as e:
-        logger.error(f"Unexpected error in finalize_report: {str(e)}")
+        logger.error(f"Unexpected error in finalize_report: {str(e)}", exc_info=True)
         await update.message.reply_text(
             "❌ An unexpected error occurred. Please try again later.\n\n"
             "မမျှော်လင့်ထားသော အမှားတစ်ခု ဖြစ်ပေါ်ခဲ့သည်။ နောက်မှ ထပ်စမ်းကြည့်ပါ။"
         )
-        return ConversationHandler.END        
+        return ConversationHandler.END
 
 async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Store the photo and finalize the report."""
+    """Store the photo in Digital Ocean S3 and finalize the report."""
     try:
         # Check if we received a photo
         if update.message.photo:
-            # Get the largest available photo (best quality)
-            photo_file = update.message.photo[-1].file_id
-            context.user_data['photo_id'] = photo_file
+            # Acknowledge receipt first to improve user experience
+            await update.message.reply_text(
+                "✅ Photo received! Processing your photo and report..."
+            )
             
-            # Log success
-            logger.info(f"Photo received for report ID: {context.user_data.get('report_id')}")
+            # Get the largest available photo (best quality)
+            photo_file = update.message.photo[-1]
+            file_id = photo_file.file_id
+            
+            # Log the original file_id for debugging
+            logger.info(f"Received photo with file_id: {file_id} for report ID: {context.user_data.get('report_id')}")
+            
+            # Download the photo file
+            photo_obj = await context.bot.get_file(file_id)
+            photo_bytes_io = io.BytesIO()
+            await photo_obj.download_to_memory(photo_bytes_io)
+            photo_bytes_io.seek(0)  # Reset pointer to beginning of file
+            
+            # Generate a unique filename
+            report_id = context.user_data.get('report_id', '')
+            photo_filename = f"{report_id}_{uuid.uuid4()}.jpg"
+            
+            try:
+                # Get S3 client
+                s3_client = get_s3_client()
+                
+                if not s3_client:
+                    # Fall back to just using Telegram's file_id if S3 client creation fails
+                    logger.warning("S3 client could not be created, using Telegram storage only")
+                    context.user_data['photo_id'] = file_id
+                    context.user_data['photo_url'] = None
+                    context.user_data['photo_path'] = None
+                else:
+                    # Upload to DO Spaces
+                    bucket_name = os.environ.get('DO_SPACES_BUCKET', 'photos')
+                    photo_bytes_io.seek(0)  # Ensure we're at the beginning of the file
+                    
+                    # Log upload attempt
+                    logger.info(f"Uploading photo {photo_filename} to DO Spaces bucket '{bucket_name}'")
+                    
+                    # Explicit ACL and content type settings
+                    try:
+                        s3_client.upload_fileobj(
+                            photo_bytes_io,
+                            bucket_name,
+                            photo_filename,
+                            ExtraArgs={
+                                'ACL': 'public-read',
+                                'ContentType': 'image/jpeg'
+                            }
+                        )
+                        
+                        # Generate the public URL
+                        endpoint_url = os.environ.get('DO_SPACES_ENDPOINT', '').rstrip('/')
+                        photo_url = f"{endpoint_url}/{bucket_name}/{photo_filename}"
+                        
+                        logger.info(f"Uploaded photo to Digital Ocean, URL: {photo_url}")
+                        
+                        # Store both the original file_id (for Telegram) and the DO Spaces URL
+                        context.user_data['photo_id'] = file_id
+                        context.user_data['photo_url'] = photo_url 
+                        context.user_data['photo_path'] = f"{bucket_name}/{photo_filename}"
+                    except Exception as upload_err:
+                        logger.error(f"S3 upload error: {str(upload_err)}", exc_info=True)
+                        # Fall back to just using Telegram's file_id
+                        context.user_data['photo_id'] = file_id
+                        context.user_data['photo_url'] = None
+                        context.user_data['photo_path'] = None
+            
+            except Exception as upload_error:
+                logger.error(f"Failed to upload photo to Digital Ocean: {str(upload_error)}", exc_info=True)
+                # Fall back to just using Telegram's file_id
+                context.user_data['photo_id'] = file_id
+                context.user_data['photo_url'] = None
+                context.user_data['photo_path'] = None
+                
+                await update.message.reply_text(
+                    "⚠️ Could not upload photo to cloud storage, but will continue with report submission using Telegram's storage."
+                )
             
             # Remove keyboard
             reply_markup = ReplyKeyboardRemove()
             
-            # Acknowledge photo receipt
+            # Acknowledge success and continue
             await update.message.reply_text(
-                "✅ Photo received! Processing your report...",
+                "✅ Photo processed! Finalizing your report...",
                 reply_markup=reply_markup
             )
             
@@ -371,7 +456,7 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             )
             return PHOTO
     except Exception as e:
-        logger.error(f"Error processing photo: {str(e)}")
+        logger.error(f"Error processing photo: {str(e)}", exc_info=True)
         await update.message.reply_text(
             "❌ There was an error processing your photo. Please try again or use 'Skip Photo'."
         )
@@ -520,15 +605,35 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await update.message.reply_text(response, parse_mode='MARKDOWN')
         
         # If there's a photo, send it too
+        # In the search_report function, update the photo handling part:
+
+        # If there's a photo, send it too
         photo_id = report.get('photo_id')
+        photo_url = report.get('photo_url')
+
+        if photo_url:
+            # Add the photo URL to the response
+            response += f"\n📷 *Photo:* [View Photo]({photo_url})\n"
+            
         if photo_id:
             try:
+                # Try to send the photo directly using Telegram's storage
                 await update.message.reply_photo(photo_id)
             except Exception as photo_error:
                 logger.error(f"Error sending photo: {str(photo_error)}")
-                await update.message.reply_text(
-                    "⚠️ Could not display the photo associated with this report."
-                )
+                if photo_url:
+                    await update.message.reply_text(
+                        f"⚠️ Could not display the photo directly, but you can view it at: {photo_url}"
+                    )
+                else:
+                    await update.message.reply_text(
+                        "⚠️ Could not display the photo associated with this report."
+                    )
+        elif photo_url:
+            # If we have a URL but no photo_id, prompt to view at URL
+            await update.message.reply_text(
+                f"📷 This report has a photo that can be viewed at: {photo_url}"
+            )
         
         # Show main menu after displaying report
         await asyncio.sleep(2)
@@ -861,7 +966,9 @@ def store_report(report_id: str, user_data: dict, user, timestamp: str) -> None:
         'all_data': user_data['all_data'],
         'urgency': user_data['urgency'],
         'timestamp': timestamp,
-        'photo': user_data.get('photo_id'),
+        'photo_id': user_data.get('photo_id'),
+        'photo_url': user_data.get('photo_url'),
+        'photo_path': user_data.get('photo_path'),
         'user_id': user.id,
         'username': user.username,
         'location': user_data.get('location', 'Unknown')
@@ -890,7 +997,7 @@ async def send_report_to_channel(bot, user_data: dict, safe_message: str) -> Non
         logger.info(f"Report sent to channel {CHANNEL_ID}")
     except Exception as e:
         logger.error(f"Failed to send report to channel: {str(e)}")
-async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        
     """Search for a report by ID with improved formatting"""
     report_id = update.message.text.strip().upper()  # Convert to uppercase for consistency
     
@@ -1056,224 +1163,6 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         logger.error(f"Error in search_report: {str(e)}", exc_info=True)
         await update.message.reply_text(
             "❌ An error occurred while retrieving the report information. Please try again later."
-        )
-        
-        # Restore main menu even after error
-        keyboard = [
-            ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
-            ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
-            ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-            ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
-        ]
-        reply_markup = ReplyKeyboardMarkup(
-            keyboard, 
-            one_time_keyboard=False,  # Persistent menu
-            resize_keyboard=True
-        )
-        
-        await update.message.reply_text(
-            "What would you like to do next?\n\n"
-            "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
-            reply_markup=reply_markup
-        )
-        
-        return CHOOSING_REPORT_TYPE
-
-async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Send a message to the submitter of a report."""
-    try:
-        if 'contact_report_id' not in context.user_data:
-            report_id = update.message.text.strip().upper()
-            
-            try:
-                # Get report from database (using get_report instead of get_report_by_id for consistency)
-                report = await get_report(report_id)
-                
-                if not report:
-                    # Check in-memory backup
-                    if report_id in REPORTS:
-                        # Use in-memory data if available
-                        memory_report = REPORTS[report_id]
-                        user_id = memory_report.get('user_id')
-                        if not user_id:
-                            await update.message.reply_text(
-                                f"❌ No user ID associated with in-memory report {report_id}. Cannot send message."
-                            )
-                            
-                            # Restore main menu instead of ending the conversation
-                            keyboard = [
-                                ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
-                                ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
-                                ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-                                ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
-                            ]
-                            reply_markup = ReplyKeyboardMarkup(
-                                keyboard, 
-                                one_time_keyboard=False,  # Persistent menu
-                                resize_keyboard=True
-                            )
-                            
-                            await update.message.reply_text(
-                                "What would you like to do next?\n\n"
-                                "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
-                                reply_markup=reply_markup
-                            )
-                            
-                            return CHOOSING_REPORT_TYPE
-                            
-                        context.user_data['contact_report_id'] = report_id
-                        context.user_data['contact_user_id'] = user_id
-                        
-                        await update.message.reply_text(
-                            f"✅ Report found in temporary storage! Please type your message to send to the submitter of report {report_id}:"
-                        )
-                        return DESCRIPTION
-                    
-                    # No report found in DB or memory
-                    logger.warning(f"No report found with ID: {report_id}")
-                    await update.message.reply_text(
-                        f"❌ No report found with ID: {report_id}. Please check the ID and try again."
-                    )
-                    
-                    # Restore main menu instead of ending the conversation
-                    keyboard = [
-                        ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
-                        ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
-                        ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-                        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
-                    ]
-                    reply_markup = ReplyKeyboardMarkup(
-                        keyboard, 
-                        one_time_keyboard=False,  # Persistent menu
-                        resize_keyboard=True
-                    )
-                    
-                    await update.message.reply_text(
-                        "What would you like to do next?\n\n"
-                        "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
-                        reply_markup=reply_markup
-                    )
-                    
-                    return CHOOSING_REPORT_TYPE
-                
-                # Report found in database
-                user_id = report.get('user_id')
-                if not user_id:
-                    logger.warning(f"Report {report_id} found but no user_id associated")
-                    await update.message.reply_text(
-                        f"❌ No user ID associated with report {report_id}. Cannot send message to the submitter."
-                    )
-                    
-                    # Restore main menu instead of ending the conversation
-                    keyboard = [
-                        ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
-                        ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
-                        ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-                        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
-                    ]
-                    reply_markup = ReplyKeyboardMarkup(
-                        keyboard, 
-                        one_time_keyboard=False,  # Persistent menu
-                        resize_keyboard=True
-                    )
-                    
-                    await update.message.reply_text(
-                        "What would you like to do next?\n\n"
-                        "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
-                        reply_markup=reply_markup
-                    )
-                    
-                    return CHOOSING_REPORT_TYPE
-                    
-                context.user_data['contact_report_id'] = report_id
-                context.user_data['contact_user_id'] = user_id
-                
-                logger.info(f"Found report {report_id} with user_id {user_id}, proceeding to message step")
-                await update.message.reply_text(
-                    f"✅ Report found! Please type your message to send to the submitter of report {report_id}:"
-                )
-                return DESCRIPTION
-                
-            except Exception as e:
-                logger.error(f"Error finding report submitter: {str(e)}", exc_info=True)
-                await update.message.reply_text(
-                    f"❌ Error finding report with ID: {report_id}. Please try again later."
-                )
-                
-                # Restore main menu even after error
-                keyboard = [
-                    ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
-                    ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
-                    ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-                    ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
-                ]
-                reply_markup = ReplyKeyboardMarkup(
-                    keyboard, 
-                    one_time_keyboard=False,  # Persistent menu
-                    resize_keyboard=True
-                )
-                
-                await update.message.reply_text(
-                    "What would you like to do next?\n\n"
-                    "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
-                    reply_markup=reply_markup
-                )
-                
-                return CHOOSING_REPORT_TYPE
-        else:
-            # Get the message content
-            message_text = update.message.text
-            report_id = context.user_data['contact_report_id']
-            user_id = context.user_data['contact_user_id']
-            
-            try:
-                # Forward the message to the report submitter
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"*Message regarding your report {report_id}*:\n\n{message_text}\n\n"
-                         f"From: {update.effective_user.first_name} {update.effective_user.last_name or ''}",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-                
-                # Confirm to the sender
-                await update.message.reply_text(
-                    f"✅ Your message has been sent to the submitter of report {report_id}."
-                )
-            except Exception as e:
-                logger.error(f"Error sending message to submitter: {str(e)}")
-                await update.message.reply_text(
-                    "❌ There was an error sending your message. The user may have blocked the bot."
-                )
-            
-            # Clear specific data but keep the conversation active
-            for key in list(context.user_data.keys()):
-                if key not in ['in_conversation']:
-                    context.user_data.pop(key, None)
-            
-            # Restore main menu instead of ending the conversation
-            keyboard = [
-                ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
-                ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
-                ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-                ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
-            ]
-            reply_markup = ReplyKeyboardMarkup(
-                keyboard, 
-                one_time_keyboard=False,  # Persistent menu
-                resize_keyboard=True
-            )
-            
-            await update.message.reply_text(
-                "What would you like to do next?\n\n"
-                "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
-                reply_markup=reply_markup
-            )
-            
-            return CHOOSING_REPORT_TYPE
-    except Exception as e:
-        logger.error(f"Unexpected error in send_message_to_submitter: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            "❌ An unexpected error occurred. Please try again or use /start to begin a new operation."
         )
         
         # Restore main menu even after error
@@ -1488,64 +1377,63 @@ def determine_urgency(text: str) -> str:
         return "Medium (Safe but Separated)"
     return "Low (Information Only)"
 
-def format_report_message(user_data: dict, report_id: str, priority_icon: str, timestamp: str, user) -> str:
-    """Format the report message with improved readability and emphasis."""
-    # Get location info if available
-    location_info = ""
-    if user_data.get('location'):
-        location_info = f"📍 *LOCATION / တည်နေရာ:*\n{user_data['location']}\n\n"
-    
-    # Format report type with larger text indicators
-    report_type_header = f"{priority_icon} *{user_data['report_type'].upper()}* {priority_icon}"
-    
-    # Format urgency level with appropriate emoji
-    urgency_level = user_data['urgency']
-    urgency_emoji = "🔴" if "Critical" in urgency_level else "🟠" if "High" in urgency_level else "🟡" if "Medium" in urgency_level else "🟢"
-    
-    # Create sections with clear visual separation
-    return (
-        f"{report_type_header}\n\n"
-        f"🆔 *REPORT ID / အစီရင်ခံအမှတ်:*\n`{report_id}`\n\n"
-        f"{location_info}"
-        f"ℹ️ *DETAILS / အသေးစိတ်:*\n{user_data['all_data']}\n\n"
-        f"{urgency_emoji} *URGENCY / အရေးပေါ်အဆင့်:*\n{urgency_level}\n\n"
-        f"⏰ *REPORTED / အချိန်:*\n{timestamp} (Asia/Yangon)\n\n"  # Added timezone indicator
-        f"👤 *REPORTED BY / တင်သွင်းသူ:*\n{user.first_name} {user.last_name or ''}"
-    )
-
-def store_report(report_id: str, user_data: dict, user, timestamp: str) -> None:
-    """Store report in memory."""
-    REPORTS[report_id] = {
-        'report_type': user_data['report_type'],
-        'all_data': user_data['all_data'],
-        'urgency': user_data['urgency'],
-        'timestamp': timestamp,
-        'photo': user_data.get('photo_id'),
-        'user_id': user.id,
-        'username': user.username,
-        'location': user_data.get('location', 'Unknown')
-    }
-
-async def send_report_to_channel(bot, user_data: dict, safe_message: str) -> None:
-    """Send report to the channel."""
-    if not CHANNEL_ID:
-        logger.warning("No channel ID configured. Report not sent to channel.")
-        return
-    
+def get_s3_client():
+    """Get configured S3 client for DigitalOcean Spaces"""
     try:
-        if user_data.get('photo_id'):
-            await bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=user_data['photo_id'],
-                caption=safe_message,
-                parse_mode=ParseMode.MARKDOWN_V2
-            )
-        else:
-            await bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=safe_message,
-                parse_mode=ParseMode.MARKDOWN_V2
-            )
-        logger.info(f"Report sent to channel {CHANNEL_ID}")
+        # Get credentials from environment variables
+        endpoint_url = os.environ.get('DO_SPACES_ENDPOINT')
+        region_name = os.environ.get('DO_SPACES_REGION', 'sgp1')
+        access_key = os.environ.get('DO_SPACES_KEY')
+        secret_key = os.environ.get('DO_SPACES_SECRET')
+        
+        # Debug log the configuration (without secrets)
+        logger.info(f"Connecting to Digital Ocean Spaces at {endpoint_url} in region {region_name}")
+        
+        if not endpoint_url:
+            logger.error("Missing DO_SPACES_ENDPOINT environment variable")
+            return None
+            
+        if not access_key or not secret_key:
+            logger.error("Missing Digital Ocean Spaces credentials in environment variables")
+            return None
+        
+        # Create and return the S3 client - IMPORTANT: use correct signature version for DO Spaces
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=endpoint_url,
+            region_name=region_name,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=Config(signature_version='s3v4')  # Use s3v4 instead of s3
+        )
+        
+        # Test connection with a simple operation
+        try:
+            # Instead of list_buckets, try a more specific operation for the bucket
+            bucket_name = os.environ.get('DO_SPACES_BUCKET', 'photos')
+            logger.info(f"Testing connection to bucket: {bucket_name}")
+            
+            try:
+                # First try to check if the bucket exists
+                s3_client.head_bucket(Bucket=bucket_name)
+                logger.info(f"Successfully connected to Digital Ocean Spaces bucket: {bucket_name}")
+            except Exception as bucket_error:
+                # If the bucket doesn't exist, try to create it
+                logger.warning(f"Bucket check failed: {str(bucket_error)}")
+                logger.info(f"Attempting to create bucket: {bucket_name}")
+                location = {'LocationConstraint': region_name}
+                s3_client.create_bucket(
+                    Bucket=bucket_name,
+                    ACL='public-read',
+                    CreateBucketConfiguration=location
+                )
+                logger.info(f"Created bucket: {bucket_name}")
+            
+            return s3_client
+        except Exception as conn_error:
+            logger.error(f"Connection test to Digital Ocean Spaces failed: {str(conn_error)}")
+            return None
+            
     except Exception as e:
-        logger.error(f"Failed to send report to channel: {str(e)}")
+        logger.error(f"Error creating S3 client: {str(e)}")
+        return None
