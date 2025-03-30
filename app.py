@@ -1,7 +1,7 @@
 import logging
 import signal
 import sys
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, BotCommand, BotCommandScopeDefault, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     filters, ContextTypes, ConversationHandler
@@ -10,6 +10,8 @@ import pytz
 from supabase import create_client
 import socket
 import time
+import asyncio
+
 
 # Import configurations
 from config.constants import BOT_TOKEN, VOLUNTEER_TEAMS, SUPABASE_URL, SUPABASE_KEY
@@ -148,7 +150,7 @@ if hasattr(signal, 'SIGQUIT'):
     signal.signal(signal.SIGQUIT, signal_handler)  # Quit signal
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Start the conversation and display a persistent menu."""
+    """Start the conversation and display both persistent keyboard and inline menu."""
     # Set a flag to indicate we're in a conversation
     context.user_data['in_conversation'] = True
     
@@ -159,36 +161,55 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         test = supabase.table("reports").select("*").limit(1).execute()
     except Exception as e:
         logger.error(f"Database connection test failed: {e}")
-        connection_warning = "⚠️ Database connectivity issues detected. Some features may be limited. ⚠️\n\n" \
-                            "ချိတ်ဆက်မှုပြဿနာအချို့ရှိနေပါသည်။ လုပ်ဆောင်ချက်အချို့ ကန့်သတ်ထားနိုင်ပါသည်။"
+        connection_warning = "⚠️ ဒေတာဘေ့စ်ချိတ်ဆက်မှု ပြဿနာများ ရှိနေသည်။ အချို့သော လုပ်ဆောင်ချက်များကို ကန့်သတ်ထားနိုင်သည်။ ⚠️"
     
-    # Create a persistent keyboard with main menu options
+    # Create a persistent keyboard with Burmese menu options
     keyboard = [
-        ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-        ['Request Rescue', 'Offer Help'],
-        ['Search Reports by ID', 'Contact Report Submitter'],
-        ['Search for Missing Person']  # New option
+        ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+        ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+        ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
     ]
     
     # Set one_time_keyboard=False to make the keyboard persistent
     reply_markup = ReplyKeyboardMarkup(
         keyboard, 
-        one_time_keyboard=False,  # Changed to False to make it persistent
+        one_time_keyboard=False,
         resize_keyboard=True
     )
 
+    # Create an inline keyboard for quick actions with Burmese
+    inline_keyboard = [
+        [
+            InlineKeyboardButton("📝 သတင်းပို့ရန်", callback_data="menu_report"),
+            InlineKeyboardButton("🔍 ရှာဖွေရန်", callback_data="menu_search")
+        ],
+        [
+            InlineKeyboardButton("🆘 အရေးပေါ်", callback_data="menu_emergency"),
+            InlineKeyboardButton("ℹ️ အကူအညီ", callback_data="menu_help")
+        ]
+    ]
+    
+    inline_markup = InlineKeyboardMarkup(inline_keyboard)
+
     await update.message.reply_text(
-        "🚨 EARTHQUAKE EMERGENCY RESPONSE 🚨\n\n"
-        "I'll help you broadcast critical information during this disaster.\n\n"
-        "မြန်မာဘာသာဖြင့် - ငလျင်အန္တရာယ်အတွက် အရေးပေါ် တုံ့ပြန်မှု\n\n"
-        "အရေးပေါ် လူပျောက်/တွေ့ရှိမှုများအတွက် ဤ Bot ကို အသုံးပြုနိုင်ပါသည်။\n"
-        "ဤဘေးအန္တရာယ်ကာလအတွင်း သတင်းအချက်အလက်များကို ထုတ်ပြန်နိုင်ရန် ကျွန်ုပ်တို့ကူညီပေးမည်။" 
+        "🚨 ငလျင် အရေးပေါ် တုံ့ပြန်မှု 🚨\n\n"
+        "ဤဘေးအန္တရာယ်ကာလအတွင်း အရေးကြီးသတင်းအချက်အလက်များကို ဖြန့်ဝေရန် အကူအညီပေးမည်။\n\n"
+        "• လူပျောက်/တွေ့ရှိမှုများ အစီရင်ခံရန်\n"
+        "• အကူအညီတောင်းခံရန် သို့မဟုတ် ကမ်းလှမ်းရန်\n"
+        "• လူပျောက်ဆုံးမှု အစီရင်ခံစာများ ရှာဖွေရန်"
         f"\n\n{connection_warning}\n\n"
-        "အစီရင်ခံလိုသည့်အကြောင်းအရာကို အောက်တွင်ရွေးချယ်ပါ:",
+        "လျင်မြန်စွာ လုပ်ဆောင်နိုင်ရန် 👇",
+        reply_markup=inline_markup
+    )
+    
+    # Send a second message with the keyboard
+    await update.message.reply_text(
+        "အောက်ပါမီနူးမှ ရွေးချယ်ပါ:",
         reply_markup=reply_markup
     )
     
-    logger.info("User started the bot with persistent menu active.")
+    logger.info("User started the bot with Burmese persistent menu active.")
     logger.info(f"Returning state CHOOSING_REPORT_TYPE: {CHOOSING_REPORT_TYPE}")
     
     return CHOOSING_REPORT_TYPE
@@ -198,52 +219,117 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     """Handle the selection from the main menu."""
     text = update.message.text
     
-    if text == 'Search Reports by ID':
+    if text == 'ID နဲ့ လူရှာမယ်':
         await update.message.reply_text(
-            "Please enter the Report ID you want to search for:\n\n"
             "ရှာဖွေလိုသည့် အစီရင်ခံစာ ID ကို ရိုက်ထည့်ပါ:",
             reply_markup=ReplyKeyboardRemove()
         )
         return SEARCHING_REPORT
     
-    elif text == 'Contact Report Submitter':
+    elif text == 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်':
         await update.message.reply_text(
-            "Please enter the Report ID of the report whose submitter you want to contact:\n\n"
             "ဆက်သွယ်လိုသည့် အစီရင်ခံစာ၏ ID ကို ရိုက်ထည့်ပါ:",
             reply_markup=ReplyKeyboardRemove()
         )
         return SEND_MESSAGE
     
-    elif text == 'Search for Missing Person':
+    elif text == 'နာမည်နဲ့ လူပျောက်ရှာမယ်':
         await update.message.reply_text(
-            "Please enter a name or details to search for missing persons:\n\n"
             "ပျောက်ဆုံးနေသူများကို ရှာရန် အမည် သို့မဟုတ် အသေးစိတ်အချက်အလက်များ ရိုက်ထည့်ပါ:",
             reply_markup=ReplyKeyboardRemove()
         )
         return SEARCH_MISSING_PERSON
     
+    # Handle other report types
+    elif text == 'လူပျောက်တိုင်မယ်':
+        context.user_data['report_type'] = 'Missing Person (Earthquake)'
+        await update.message.reply_text(
+            "သင်နေထိုင်သည့် မြို့ သို့မဟုတ် ဒေသကို ရွေးချယ်ပါ:",
+            reply_markup=ReplyKeyboardMarkup([
+                ['ရန်ကုန်', 'မန္တလေး'],
+                ['နေပြည်တော်', 'ပဲခူး'],
+                ['စစ်ကိုင်း', 'မကွေး'],
+                ['ဧရာဝတီ', 'တနင်္သာရီ'],
+                ['မွန်', 'ရှမ်း'],
+                ['ကချင်', 'ကယား/ကရင်နီ'],
+                ['ကရင်', 'ချင်း'],
+                ['ရခိုင်', 'အခြား']
+            ], resize_keyboard=True)
+        )
+        return CHOOSING_LOCATION
+    
+    elif text == 'သတင်းပို့မယ်':
+        context.user_data['report_type'] = 'Found Person (Earthquake)'
+        await update.message.reply_text(
+            "သင်နေထိုင်သည့် မြို့ သို့မဟုတ် ဒေသကို ရွေးချယ်ပါ:",
+            reply_markup=ReplyKeyboardMarkup([
+                ['ရန်ကုန်', 'မန္တလေး'],
+                ['နေပြည်တော်', 'ပဲခူး'],
+                ['စစ်ကိုင်း', 'မကွေး'],
+                ['ဧရာဝတီ', 'တနင်္သာရီ'],
+                ['မွန်', 'ရှမ်း'],
+                ['ကချင်', 'ကယား/ကရင်နီ'],
+                ['ကရင်', 'ချင်း'],
+                ['ရခိုင်', 'အခြား']
+            ], resize_keyboard=True)
+        )
+        return CHOOSING_LOCATION
+        
+    elif text == 'အကူအညီတောင်းမယ်':
+        context.user_data['report_type'] = 'Request Rescue'
+        await update.message.reply_text(
+            "သင်နေထိုင်သည့် မြို့ သို့မဟုတ် ဒေသကို ရွေးချယ်ပါ:",
+            reply_markup=ReplyKeyboardMarkup([
+                ['ရန်ကုန်', 'မန္တလေး'],
+                ['နေပြည်တော်', 'ပဲခူး'],
+                ['စစ်ကိုင်း', 'မကွေး'],
+                ['ဧရာဝတီ', 'တနင်္သာရီ'],
+                ['မွန်', 'ရှမ်း'],
+                ['ကချင်', 'ကယား/ကရင်နီ'],
+                ['ကရင်', 'ချင်း'],
+                ['ရခိုင်', 'အခြား']
+            ], resize_keyboard=True)
+        )
+        return CHOOSING_LOCATION
+        
+    elif text == 'အကူအညီပေးမယ်':
+        context.user_data['report_type'] = 'Offer Help'
+        await update.message.reply_text(
+            "သင်နေထိုင်သည့် မြို့ သို့မဟုတ် ဒေသကို ရွေးချယ်ပါ:",
+            reply_markup=ReplyKeyboardMarkup([
+                ['ရန်ကုန်', 'မန္တလေး'],
+                ['နေပြည်တော်', 'ပဲခူး'],
+                ['စစ်ကိုင်း', 'မကွေး'],
+                ['ဧရာဝတီ', 'တနင်္သာရီ'],
+                ['မွန်', 'ရှမ်း'],
+                ['ကချင်', 'ကယား/ကရင်နီ'],
+                ['ကရင်', 'ချင်း'],
+                ['ရခိုင်', 'အခြား']
+            ], resize_keyboard=True)
+        )
+        return CHOOSING_LOCATION
+    
     else:
-        # Handle normal report types
+        # For backward compatibility, pass to the original handler
         return await choose_report_type(update, context)
 
 
 async def restore_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Restore the main menu after completing an operation."""
     keyboard = [
-        ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-        ['Request Rescue', 'Offer Help'],
-        ['Search Reports by ID', 'Contact Report Submitter'],
-        ['Search for Missing Person']
+        ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+        ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+        ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
     ]
     
     reply_markup = ReplyKeyboardMarkup(
         keyboard, 
-        one_time_keyboard=False,  # Persistent menu
+        one_time_keyboard=False,
         resize_keyboard=True
     )
 
     await update.message.reply_text(
-        "What would you like to do next?\n\n"
         "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
         reply_markup=reply_markup
     )
@@ -269,38 +355,47 @@ async def global_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show help information."""
+    """Show help information in Burmese."""
     await update.message.reply_text(
-        "🆘 *EARTHQUAKE EMERGENCY HELP* 🆘\n\n"
-        "• Use /start to report missing or found people/items\n"
-        "• Be precise with location details\n"
-        "• Include contact information\n"
-        "• Each report gets a unique ID - save it!\n"
-        "• Use 'Search Reports by ID' to find specific reports\n"
-        "• Use 'Contact Report Submitter' to message the person who posted\n"
-        "• Use 'Search for Missing Person' to find people by name or details\n\n"
-        "🆘 *ငလျင်အရေးပေါ်အကူအညီ* 🆘\n\n"
-        "• ပျောက်ဆုံးသို့မဟုတ်တွေ့ရှိသူများ၊ သတင်းအချက်အလက်တင်ရန် /start ကိုသုံးပါ\n"
+        "🆘 *ငလျင် အရေးပေါ် အကူအညီ* 🆘\n\n"
+        "• လူပျောက်/တွေ့ရှိမှုများအတွက် /start ကိုသုံးပါ\n"
         "• တည်နေရာအသေးစိတ်ကို တိကျစွာဖော်ပြပါ\n"
-        "• ဆက်သွယ်ရန်အချက်အလက်ထည့်သွင်းပါ\n"
-        "• အစီရင်ခံစာတိုင်းတွင် သီးသန့်အမှတ်စဉ်ရှိပါသည် - သိမ်းထားပါ!\n"
-        "• For volunteer contacts, type /volunteer\n"
-        "• If you want a list of all commands, type /menu\n\n"
-        "Stay safe and avoid damaged structures!",
+        "• ဆက်သွယ်ရန်အချက်အလက် ထည့်သွင်းပါ\n"
+        "• အစီရင်ခံစာတိုင်းတွင် သီးသန့် ID ရှိသည် - သိမ်းထားပါ!\n"
+        "• 'ID နဲ့ လူရှာမယ်' ကို အသုံးပြု၍ အစီရင်ခံစာများကို ရှာပါ\n"
+        "• 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်' ကိုသုံး၍ သတင်းပို့သူထံ စာပို့ပါ\n"
+        "• 'နာမည်နဲ့ လူပျောက်ရှာမယ်' ကိုသုံး၍ အမည်ဖြင့် ရှာဖွေပါ\n\n"
+        "• စေတနာ့ဝန်ထမ်း အဖွဲ့များ ဆက်သွယ်ရန် /volunteer ကိုရိုက်ပါ\n"
+        "• ရရှိနိုင်သည့် မီနူးအားလုံးစာရင်းကို ကြည့်ရန် /menu ကိုရိုက်ပါ\n\n"
+        "ဘေးကင်းလုံခြုံပါစေ၊ ပျက်စီးနေသော အဆောက်အအုံများကို ရှောင်ကြဉ်ပါ!",
         parse_mode='MARKDOWN'
     )
 
+
+async def setup_burmese_commands(application: Application):
+    """Set up the bot commands menu button with Burmese labels"""
+    commands = [
+        BotCommand("start", "အဓိက မီနူးများကို ပြရန်"),
+        BotCommand("help", "အကူအညီနှင့် လမ်းညွှန်ချက်များ"),
+        BotCommand("menu", "မီနူးအားလုံးကို ကြည့်ရန်"),
+        BotCommand("volunteer", "စေတနာ့ဝန်ထမ်း ဆက်သွယ်ရန်"),
+        BotCommand("cancel", "လက်ရှိလုပ်ဆောင်နေသည်ကို ပယ်ဖျက်ရန်"),
+        BotCommand("getid", "သင့် User ID ကို ကြည့်ရန်")
+    ]
+    
+    await application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    logger.info("Bot commands menu set up with Burmese labels")
+
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show available commands."""
+    """Show available commands in Burmese."""
     await update.message.reply_text(
-        "*Main Menu / Main Menu*\n\n"
-        "/start - Begin reporting a missing/found person or item\n"
-        "/start search - Search for a report by ID\n"
-        "/volunteer - View volunteer contact information\n"
-        "/help - General help and emergency numbers\n"
-        "/cancel - Cancel current operation\n"
-        "/menu - Show this menu\n"
-        "/getid - Get your User ID and username",
+        "*အဓိက မီနူးများ*\n\n"
+        "/start - ပျောက်ဆုံး/တွေ့ရှိသူ အစီရင်ခံရန် စတင်ပါ\n"
+        "/volunteer - စေတနာ့ဝန်ထမ်း ဆက်သွယ်ရန် အချက်အလက်\n"
+        "/help - အကူအညီနှင့် အရေးပေါ်ဖုန်းနံပါတ်များ\n"
+        "/cancel - လက်ရှိ လုပ်ဆောင်နေသော လုပ်ငန်းကို ပယ်ဖျက်ရန်\n"
+        "/menu - ဤမီနူးကို ပြရန်\n"
+        "/getid - သင့် User ID နှင့် အသုံးပြုသူအမည်ကို ရယူပါ",
         parse_mode='MARKDOWN'
     )
 
@@ -318,11 +413,14 @@ async def volunteer_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Get user ID information."""
     user = update.effective_user
+    username = user.username if user.username else "None"
+    
+    # Fix the markdown formatting
     await update.message.reply_text(
         f"Your User ID: `{user.id}`\n"
         f"Your Name: {user.first_name}\n"
-        f"Your Username: @{user.username}",
-        parse_mode='MARKDOWN'
+        f"Your Username: @{username}",
+        parse_mode='Markdown'  # Use 'Markdown' instead of 'MARKDOWN'
     )
 
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -363,6 +461,9 @@ def main():
     """Start the bot."""
     # Create the Application directly with the token and defaults
     application = Application.builder().token(BOT_TOKEN).build()
+
+    application.post_init = setup_burmese_commands
+
     
     # Main conversation handler
     conv_handler = ConversationHandler(

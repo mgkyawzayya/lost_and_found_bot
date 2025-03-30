@@ -24,7 +24,17 @@ REPORTS = {}
 async def choose_report_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle user's selection of report type."""
     text = update.message.text
-    context.user_data['report_type'] = text
+    
+    report_type_map = {
+        'လူပျောက်တိုင်မယ်': 'Missing Person (Earthquake)',
+        'သတင်းပို့မယ်': 'Found Person (Earthquake)',
+        'အကူအညီတောင်းမယ်': 'Request Rescue',
+        'အကူအညီပေးမယ်': 'Offer Help'
+    }
+    
+    # Use the mapped report type if available, otherwise use the original text
+    context.user_data['report_type'] = report_type_map.get(text, text)
+    
     # Make sure to set this flag to indicate we're in a conversation
     context.user_data['in_conversation'] = True
     
@@ -37,12 +47,12 @@ async def choose_report_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if text in high_urgency_types:
         # For high urgency reports, first ask for location
         keyboard = [
-            ['Yangon', 'Mandalay', 'Naypyidaw'],
-            ['Bago', 'Sagaing', 'Magway'],
-            ['Ayeyarwady', 'Tanintharyi', 'Mon'],
-            ['Shan', 'Kachin', 'Kayah'],
-            ['Kayin', 'Chin', 'Rakhine'],
-            ['Other Location']
+            ['ရန်ကုန်', 'မန္တလေး', 'နေပြည်တော်'],
+            ['ပဲခူး', 'စစ်ကိုင်း', 'မကွေး'],
+            ['ဧရာဝတီ', 'တနင်္သာရီ', 'မွန်'],
+            ['ရှမ်း', 'ကချင်', 'ကယား'],
+            ['ကရင်', 'ချင်း', 'ရခိုင်'],
+            ['အခြားတည်နေရာ']
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         
@@ -77,6 +87,23 @@ async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     # Set location prefix for case ID
     location_prefixes = {
+        'ရန်ကုန်': 'ygn',
+        'မန္တလေး': 'mdy',
+        'နေပြည်တော်': 'npt',
+        'ပဲခူး': 'bgo',
+        'စစ်ကိုင်း': 'sgg',
+        'မကွေး': 'mgw',
+        'ဧရာဝတီ': 'ayd',
+        'တနင်္သာရီ': 'tnt',
+        'မွန်': 'mon',
+        'ရှမ်း': 'shn',
+        'ကချင်': 'kch',
+        'ကယား/ကရင်နီ': 'kyh',
+        'ကရင်': 'kyn',
+        'ချင်း': 'chn',
+        'ရခိုင်': 'rkh',
+        'အခြား': 'othr',
+        # Keep English versions for backward compatibility
         'Yangon': 'ygn',
         'Mandalay': 'mdy',
         'Naypyidaw': 'npt',
@@ -104,27 +131,25 @@ async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Continue with normal data collection flow
     if context.user_data['report_type'] == 'Missing Person (Earthquake)':
         await update.message.reply_text(
-            "Please provide the following information about the missing person:\n"
-            "1. Full Name\n"
-            "2. Age\n"
-            "3. Gender\n"
-            "4. Last Known Location (be specific)\n"
-            "5. Physical Description\n"
-            "6. When Last Seen (date/time)\n"
-            "7. Your Contact Information\n\n"
-            "ပျောက်ဆုံးနေသူနှင့် ပတ်သက်သည့် အချက်အလက်များကို ဖြည့်စွက်ပေးပါ။"
+            "ပျောက်ဆုံးနေသူနှင့် ပတ်သက်သည့် အချက်အလက်များကို ဖြည့်စွက်ပေးပါ။\n"
+            "1. အမည်အပြည့်အစုံ\n"
+            "2. အသက်\n"
+            "3. ကျား/မ\n"
+            "4. နောက်ဆုံးတွေ့ရှိခဲ့သည့်နေရာ (အသေးစိတ်ဖော်ပြပါ)\n"
+            "5. ကိုယ်ခန္ဓာဖော်ပြချက်\n"
+            "6. နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန် (ရက်စွဲ/အချိန်)\n"
+            "7. သင့်ဆက်သွယ်ရန်အချက်အလက်"
         )
     elif context.user_data['report_type'] == 'Request Rescue':
         await update.message.reply_text(
-            "Please provide the following rescue information:\n"
-            "1. Number of people trapped\n"
-            "2. Exact address/location\n"
-            "3. Building condition\n"
-            "4. Any injuries?\n"
-            "5. Urgent needs (medical, water, etc.)\n"
-            "6. Your name and relation to trapped\n"
-            "7. Alternative contact method\n\n"
-            "ကယ်ဆယ်ရေးအတွက် သတင်းအချက်အလက်များ ဖြည့်စွက်ပေးပါ။"
+            "ကယ်ဆယ်ရေးအတွက် အောက်ပါအချက်အလက်များကို ပေးပါ -\n"
+            "1. ပိတ်မိနေသူ အရေအတွက်\n"
+            "2. တိကျသော လိပ်စာ/တည်နေရာ\n"
+            "3. အဆောက်အအုံအခြေအနေ\n"
+            "4. ဒဏ်ရာရရှိမှုရှိပါသလား?\n"
+            "5. အရေးပေါ်လိုအပ်ချက်များ (ဆေးဝါး၊ ရေ၊ အစားအစာ)\n"
+            "6. သင့်အမည်နှင့် ပိတ်မိနေသူများနှင့် ဆက်နွယ်မှု\n"
+            "7. အခြားဆက်သွယ်ရန်နည်းလမ်း"
         )
     
     return COLLECTING_DATA
@@ -143,21 +168,22 @@ async def collect_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     context.user_data['report_id'] = report_id
     
     # Create urgency selection keyboard
+    # Create urgency selection keyboard
     keyboard = [
-        ["Critical (Medical Emergency)"],
-        ["High (Trapped/Missing)"],
-        ["Medium (Safe but Separated)"],
-        ["Low (Information Only)"]
+        ["အလွန်အရေးပေါ် (ဆေးကုသမှု လိုအပ်)"],
+        ["အရေးပေါ် (ပိတ်မိနေ/ပျောက်ဆုံး)"],
+        ["အလယ်အလတ် (လုံခြုံသော်လည်း ကွဲကွာနေ)"],
+        ["အရေးမကြီး (သတင်းအချက်အလက်သာ)"]
     ]
     reply_markup = ReplyKeyboardMarkup(
         keyboard, 
         one_time_keyboard=True, 
         resize_keyboard=True
     )
-    
+
     await update.message.reply_text(
-        f"Thank you for providing this information. Your report ID is: *{report_id}*\n\n"
-        "Please select the urgency level of your report:",
+        f"အချက်အလက်များ ပေးပို့သည့်အတွက် ကျေးဇူးတင်ပါသည်။ သင့် အစီရင်ခံစာ ID မှာ: *{report_id}*\n\n"
+        "သင့် အစီရင်ခံစာ၏ အရေးပေါ်အဆင့်ကို ရွေးချယ်ပါ:",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=reply_markup
     )
@@ -168,12 +194,25 @@ async def select_urgency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Handle the selection of urgency level."""
     selected_urgency = update.message.text
     
-    # Store the selected urgency
-    context.user_data['urgency'] = selected_urgency
+    # Map Burmese urgency levels to English for database storage
+    urgency_map = {
+        "အလွန်အရေးပေါ်": "Critical (Medical Emergency)",
+        "အရေးပေါ်": "High (Trapped/Missing)",
+        "အသင့်အတင့်": "Medium (Safe but Separated)",
+        "သာမန်": "Low (Information Only)",
+        # Keep English versions for backward compatibility
+        "Critical (Medical Emergency)": "Critical (Medical Emergency)",
+        "High (Trapped/Missing)": "High (Trapped/Missing)",
+        "Medium (Safe but Separated)": "Medium (Safe but Separated)",
+        "Low (Information Only)": "Low (Information Only)"
+    }
+    
+    # Store the mapped urgency
+    context.user_data['urgency'] = urgency_map.get(selected_urgency, selected_urgency)
     
     # Create a keyboard with a skip button for photo
     keyboard = [[
-        "Skip Photo"
+        "ဓာတ်ပုံ မရှိပါ"  # "Skip Photo" in Burmese
     ]]
     reply_markup = ReplyKeyboardMarkup(
         keyboard, 
@@ -182,11 +221,9 @@ async def select_urgency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     
     await update.message.reply_text(
-        "Urgency level set. Thank you.\n\n"
-        "📸 If you have a photo, please send it now.\n"
-        "Or click 'Skip Photo' to continue without a photo.\n\n"
-        "ဓာတ်ပုံရှိပါက ယခုပေးပို့နိုင်ပါသည်။\n"
-        "မရှိပါက 'Skip Photo' ခလုတ်ကိုနှိပ်ပါ။",
+        "အရေးပေါ်အဆင့် သတ်မှတ်ပြီးပါပြီ။\n\n"
+        "📸 ဓာတ်ပုံရှိပါက ယခုပေးပို့နိုင်ပါသည်။\n"
+        "မရှိပါက 'ဓာတ်ပုံ မရှိပါ' ခလုတ်ကိုနှိပ်ပါ။",
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=reply_markup
     )
@@ -348,15 +385,18 @@ async def handle_skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         
         logger.info(f"Photo skip handler received: {user_input}")
         
-        # Allow either "skip" (typed) or "Skip Photo" (button press)
-        if user_input.lower() == "skip" or user_input == "Skip Photo":
+        # Allow either "skip" (typed) or "Skip Photo" (button press) or Burmese version
+        if (user_input.lower() == "skip" or 
+            user_input == "Skip Photo" or 
+            user_input == "ဓာတ်ပုံ မရှိပါ"):
+            
             # Set no photo indicator
             context.user_data['photo_id'] = None
             
             # Remove keyboard
             reply_markup = ReplyKeyboardRemove()
             await update.message.reply_text(
-                "Skipping photo upload...",
+                "ဓာတ်ပုံကို ကျော်သွားပါမည်...",
                 reply_markup=reply_markup
             )
             
@@ -365,7 +405,7 @@ async def handle_skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         else:
             # User input something else - ask again
             keyboard = [[
-                "Skip Photo"
+                "ဓာတ်ပုံ မရှိပါ"  # Skip Photo in Burmese
             ]]
             reply_markup = ReplyKeyboardMarkup(
                 keyboard, 
@@ -374,8 +414,7 @@ async def handle_skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )
             
             await update.message.reply_text(
-                "Please either send a photo or click 'Skip Photo'.\n\n"
-                "ဓာတ်ပုံပေးပို့ပါ သို့မဟုတ် 'Skip Photo' ကိုနှိပ်ပါ။",
+                "ဓာတ်ပုံပေးပို့ပါ သို့မဟုတ် 'ဓာတ်ပုံ မရှိပါ' ခလုတ်ကိုနှိပ်ပါ။",
                 reply_markup=reply_markup
             )
             
@@ -384,7 +423,7 @@ async def handle_skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception as e:
         logger.error(f"Error in handle_skip_photo: {str(e)}")
         await update.message.reply_text(
-            "❌ An error occurred. Please try again or /cancel to start over."
+            "❌ အမှားတစ်ခု ဖြစ်ပွားခဲ့သည်။ ထပ်မံကြိုးစားပါ သို့မဟုတ် /cancel သုံးပြီး အစကနေစတင်ပါ။"
         )
         return PHOTO
 
@@ -682,15 +721,15 @@ async def choose_report_to_contact(update: Update, context: ContextTypes.DEFAULT
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show the main menu after report completion"""
     keyboard = [
-        ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-        ['Request Rescue', 'Offer Help'],
-        ['Search Reports by ID', 'Contact Report Submitter'],
-        ['Search for Missing Person']
+        ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+        ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+        ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
     ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=False, resize_keyboard=True)
 
     await update.message.reply_text(
-        "What would you like to do next?",
+        "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
         reply_markup=reply_markup
     )
     
@@ -701,27 +740,27 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def get_instructions_by_type(report_type):
     """Return instructions based on report type."""
     instructions = {
-        "Missing Person (Earthquake)": (
-            "*Missing Person Report*\n\n"
-            "Please provide the following information in a single message:\n\n"
-            "1. Person's name\n"
-            "2. Age\n"
-            "3. Gender\n"
-            "4. Physical description (height, build, clothing, etc.)\n"
-            "5. Last known location (be as specific as possible)\n"
-            "6. When they were last seen (date/time)\n"
-            "7. Any medical conditions or special needs\n"
-            "8. Your contact information\n\n"
-            "*Example:*\n"
-            "1. Aung Ko\n"
-            "2. 35\n"
-            "3. Male\n" 
-            "4. Tall (5'10\"), thin build, black hair, was wearing blue jeans and red t-shirt\n"
-            "5. Last seen at Sule Square Mall, 2nd floor near the food court\n"
-            "6. November 26, 2023 around 2:30pm\n"
-            "7. Diabetes, needs regular medication\n"
-            "8. Contact: Thu Thu (sister) - 09123456789\n\n"
-            "*Note:* You can add a photo in the next step."
+       "Missing Person (Earthquake)": (
+            "*လူပျောက်အစီရင်ခံစာ*\n\n"
+            "ကျေးဇူးပြု၍ အောက်ပါအချက်အလက်များကို တစ်ခုတည်းသော စာတစ်စောင်တွင် ပေးပို့ပါ -\n\n"
+            "1. ပျောက်ဆုံးသူအမည်\n"
+            "2. အသက်\n"
+            "3. ကျား/မ\n"
+            "4. ကိုယ်ခန္ဓာဖော်ပြချက် (အရပ်၊ ကိုယ်ခန္ဓာဖွဲ့စည်းပုံ၊ ဝတ်ဆင်ထားသော အဝတ်အစား စသည်)\n"
+            "5. နောက်ဆုံးတွေ့ရှိခဲ့သည့်နေရာ (တတ်နိုင်သမျှ တိကျစွာ ဖော်ပြပါ)\n"
+            "6. နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန် (ရက်စွဲ/အချိန်)\n"
+            "7. ဆေးဝါးအခြေအနေ သို့မဟုတ် အထူးလိုအပ်ချက်များ\n"
+            "8. သင့်ဆက်သွယ်ရန်အချက်အလက်\n\n"
+            "*ဥပမာ:*\n"
+            "1. အောင်ကို\n"
+            "2. ၃၅\n"
+            "3. ကျား\n" 
+            "4. အရပ်မြင့် (၅ပေ ၁၀လက်မ)၊ ပိန်ပိန်ပါး၊ ဆံပင်အမည်း၊ ဂျင်းဘောင်းဘီ အပြာနှင့် တီရှပ်အနီဝတ်ဆင်ထား\n"
+            "5. နောက်ဆုံး ဆူးလေစတုရန်းမော်လ် ဒုတိယထပ် စားသောက်ဆိုင်အနီးတွင် တွေ့ရှိခဲ့\n"
+            "6. နိုဝင်ဘာ ၂၆၊ ၂၀၂၃ - ညနေ ၂:၃၀ ခန့်\n"
+            "7. ဆီးချိုရောဂါရှိ၊ ပုံမှန်ဆေးသောက်ရန်လို\n"
+            "8. ဆက်သွယ်ရန် - သူသူ (ညီမ) - ၀၉၁၂၃၄၅၆၇၈၉\n\n"
+            "*မှတ်ချက်:* နောက်အဆင့်တွင် ဓာတ်ပုံထည့်သွင်းနိုင်ပါသည်။"
         ),
         "Found Person (Earthquake)": (
             "*Found Person Report*\n\n"
@@ -897,10 +936,10 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 
                 # Restore main menu instead of ending the conversation
                 keyboard = [
-                    ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-                    ['Request Rescue', 'Offer Help'],
-                    ['Search Reports by ID', 'Contact Report Submitter'],
-                    ['Search for Missing Person']
+                    ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+                    ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+                    ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+                    ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
                 ]
                 reply_markup = ReplyKeyboardMarkup(
                     keyboard, 
@@ -924,10 +963,10 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             
             # Restore main menu instead of ending the conversation
             keyboard = [
-                ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-                ['Request Rescue', 'Offer Help'],
-                ['Search Reports by ID', 'Contact Report Submitter'],
-                ['Search for Missing Person']
+                ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+                ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+                ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+                ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
             ]
             reply_markup = ReplyKeyboardMarkup(
                 keyboard, 
@@ -995,10 +1034,10 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         
         # Restore main menu instead of ending the conversation
         keyboard = [
-            ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-            ['Request Rescue', 'Offer Help'],
-            ['Search Reports by ID', 'Contact Report Submitter'],
-            ['Search for Missing Person']
+            ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+            ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+            ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+            ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
         ]
         reply_markup = ReplyKeyboardMarkup(
             keyboard, 
@@ -1021,10 +1060,10 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         
         # Restore main menu even after error
         keyboard = [
-            ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-            ['Request Rescue', 'Offer Help'],
-            ['Search Reports by ID', 'Contact Report Submitter'],
-            ['Search for Missing Person']
+            ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+            ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+            ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+            ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
         ]
         reply_markup = ReplyKeyboardMarkup(
             keyboard, 
@@ -1063,10 +1102,10 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
                             
                             # Restore main menu instead of ending the conversation
                             keyboard = [
-                                ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-                                ['Request Rescue', 'Offer Help'],
-                                ['Search Reports by ID', 'Contact Report Submitter'],
-                                ['Search for Missing Person']
+                                ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+                                ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+                                ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+                                ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
                             ]
                             reply_markup = ReplyKeyboardMarkup(
                                 keyboard, 
@@ -1098,10 +1137,10 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
                     
                     # Restore main menu instead of ending the conversation
                     keyboard = [
-                        ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-                        ['Request Rescue', 'Offer Help'],
-                        ['Search Reports by ID', 'Contact Report Submitter'],
-                        ['Search for Missing Person']
+                        ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+                        ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+                        ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+                        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
                     ]
                     reply_markup = ReplyKeyboardMarkup(
                         keyboard, 
@@ -1127,10 +1166,10 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
                     
                     # Restore main menu instead of ending the conversation
                     keyboard = [
-                        ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-                        ['Request Rescue', 'Offer Help'],
-                        ['Search Reports by ID', 'Contact Report Submitter'],
-                        ['Search for Missing Person']
+                        ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+                        ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+                        ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+                        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
                     ]
                     reply_markup = ReplyKeyboardMarkup(
                         keyboard, 
@@ -1163,10 +1202,10 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
                 
                 # Restore main menu even after error
                 keyboard = [
-                    ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-                    ['Request Rescue', 'Offer Help'],
-                    ['Search Reports by ID', 'Contact Report Submitter'],
-                    ['Search for Missing Person']
+                    ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+                    ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+                    ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+                    ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
                 ]
                 reply_markup = ReplyKeyboardMarkup(
                     keyboard, 
@@ -1213,10 +1252,10 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
             
             # Restore main menu instead of ending the conversation
             keyboard = [
-                ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-                ['Request Rescue', 'Offer Help'],
-                ['Search Reports by ID', 'Contact Report Submitter'],
-                ['Search for Missing Person']
+                ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+                ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+                ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+                ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
             ]
             reply_markup = ReplyKeyboardMarkup(
                 keyboard, 
@@ -1239,10 +1278,10 @@ async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAUL
         
         # Restore main menu even after error
         keyboard = [
-            ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-            ['Request Rescue', 'Offer Help'],
-            ['Search Reports by ID', 'Contact Report Submitter'],
-            ['Search for Missing Person']
+            ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+            ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+            ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+            ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
         ]
         reply_markup = ReplyKeyboardMarkup(
             keyboard, 
@@ -1341,10 +1380,10 @@ async def choose_report_to_contact(update: Update, context: ContextTypes.DEFAULT
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show the main menu after report completion"""
     keyboard = [
-        ['Missing Person (Earthquake)', 'Found Person (Earthquake)'],
-        ['Request Rescue', 'Offer Help'],
-        ['Search Reports by ID', 'Contact Report Submitter'],
-        ['Search for Missing Person']
+        ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+        ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+        ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
@@ -1361,82 +1400,82 @@ def get_instructions_by_type(report_type):
     """Return instructions based on report type."""
     instructions = {
         "Missing Person (Earthquake)": (
-            "*Missing Person Report*\n\n"
-            "Please provide the following information in a single message:\n\n"
-            "1. Person's name\n"
-            "2. Age\n"
-            "3. Gender\n"
-            "4. Physical description (height, build, clothing, etc.)\n"
-            "5. Last known location (be as specific as possible)\n"
-            "6. When they were last seen (date/time)\n"
-            "7. Any medical conditions or special needs\n"
-            "8. Your contact information\n\n"
-            "*Example:*\n"
-            "1. Aung Ko\n"
-            "2. 35\n"
-            "3. Male\n" 
-            "4. Tall (5'10\"), thin build, black hair, was wearing blue jeans and red t-shirt\n"
-            "5. Last seen at Sule Square Mall, 2nd floor near the food court\n"
-            "6. November 26, 2023 around 2:30pm\n"
-            "7. Diabetes, needs regular medication\n"
-            "8. Contact: Thu Thu (sister) - 09123456789\n\n"
-            "*Note:* You can add a photo in the next step."
+            "*လူပျောက်အစီရင်ခံစာ*\n\n"
+            "ကျေးဇူးပြု၍ အောက်ပါအချက်အလက်များကို တစ်ခုတည်းသော စာတစ်စောင်တွင် ပေးပို့ပါ -\n\n"
+            "1. ပျောက်ဆုံးသူအမည်\n"
+            "2. အသက်\n"
+            "3. ကျား/မ\n"
+            "4. ကိုယ်ခန္ဓာဖော်ပြချက် (အရပ်၊ ကိုယ်ခန္ဓာဖွဲ့စည်းပုံ၊ ဝတ်ဆင်ထားသော အဝတ်အစား စသည်)\n"
+            "5. နောက်ဆုံးတွေ့ရှိခဲ့သည့်နေရာ (တတ်နိုင်သမျှ တိကျစွာ ဖော်ပြပါ)\n"
+            "6. နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန် (ရက်စွဲ/အချိန်)\n"
+            "7. ဆေးဝါးအခြေအနေ သို့မဟုတ် အထူးလိုအပ်ချက်များ\n"
+            "8. သင့်ဆက်သွယ်ရန်အချက်အလက်\n\n"
+            "*ဥပမာ:*\n"
+            "1. အောင်ကို\n"
+            "2. ၃၅\n"
+            "3. ကျား\n" 
+            "4. အရပ်မြင့် (၅ပေ ၁၀လက်မ)၊ ပိန်ပိန်ပါး၊ ဆံပင်အမည်း၊ ဂျင်းဘောင်းဘီ အပြာနှင့် တီရှပ်အနီဝတ်ဆင်ထား\n"
+            "5. နောက်ဆုံး ဆူးလေစတုရန်းမော်လ် ဒုတိယထပ် စားသောက်ဆိုင်အနီးတွင် တွေ့ရှိခဲ့\n"
+            "6. နိုဝင်ဘာ ၂၆၊ ၂၀၂၃ - ညနေ ၂:၃၀ ခန့်\n"
+            "7. ဆီးချိုရောဂါရှိ၊ ပုံမှန်ဆေးသောက်ရန်လို\n"
+            "8. ဆက်သွယ်ရန် - သူသူ (ညီမ) - ၀၉၁၂၃၄၅၆၇၈၉\n\n"
+            "*မှတ်ချက်:* နောက်အဆင့်တွင် ဓာတ်ပုံထည့်သွင်းနိုင်ပါသည်။"
         ),
         "Found Person (Earthquake)": (
-            "*Found Person Report*\n\n"
-            "Please provide the following information in a single message:\n\n"
-            "1. Person's name (if known)\n"
-            "2. Approximate age\n"
-            "3. Gender\n"
-            "4. Physical description (height, build, clothing, etc.)\n"
-            "5. Where they were found\n"
-            "6. Current location/status\n"
-            "7. Any injuries or medical needs\n"
-            "8. Your contact information\n\n"
-            "*Example:*\n"
-            "1. Unknown name, says her name may be Ma Hla\n"
-            "2. About 25-30 years old\n"
-            "3. Female\n"
-            "4. Medium height, slim, long black hair, wearing white blouse and blue longyi\n"
-            "5. Found near Ruby Mart after building evacuation\n"
-            "6. Currently at Yangon General Hospital, Emergency Ward\n"
-            "7. Minor cuts on arms, seems disoriented\n"
-            "8. Contact: Dr. Thant, Yangon General Hospital - 09987654321\n\n"
-            "*Note:* You can add a photo in the next step."
+            "*လူတွေ့ရှိမှု အစီရင်ခံစာ*\n\n"
+            "ကျေးဇူးပြု၍ အောက်ပါအချက်အလက်များကို တစ်ခုတည်းသော စာတစ်စောင်တွင် ပေးပို့ပါ -\n\n"
+            "1. တွေ့ရှိသူ၏ အမည် (သိရှိပါက)\n"
+            "2. ခန့်မှန်းအသက်\n"
+            "3. ကျား/မ\n"
+            "4. ကိုယ်ခန္ဓာဖော်ပြချက် (အရပ်၊ ကိုယ်ခန္ဓာဖွဲ့စည်းပုံ၊ ဝတ်ဆင်ထားသော အဝတ်အစား စသည်)\n"
+            "5. တွေ့ရှိခဲ့သည့်နေရာ\n"
+            "6. လက်ရှိတည်နေရာ/အခြေအနေ\n"
+            "7. ဒဏ်ရာရရှိမှု သို့မဟုတ် ဆေးဝါးလိုအပ်ချက်များ\n"
+            "8. သင့်ဆက်သွယ်ရန်အချက်အလက်\n\n"
+            "*ဥပမာ:*\n"
+            "1. အမည်မသိ၊ သူမအမည် မဟာ ဖြစ်နိုင်သည်ဟု ပြောပါသည်\n"
+            "2. အသက် ၂၅-၃၀ ခန့်\n"
+            "3. မ\n"
+            "4. အလယ်အလတ်အရပ်၊ ပိန်ပိန်သွယ်သွယ်၊ ဆံပင်ရှည် အမည်း၊ အကျႌဖြူနှင့် ထဘီ အပြာ ဝတ်ဆင်ထား\n"
+            "5. အဆောက်အဦးမှ စစ်ဆေးရေး ချိန်တွင် ရူဘီမတ် အနီးတွင် တွေ့ရှိခဲ့\n"
+            "6. လက်ရှိတွင် ရန်ကုန်အထွေထွေဆေးရုံကြီး၊ အရေးပေါ်ဌာနတွင် ရှိပါသည်\n"
+            "7. လက်မောင်းတွင် အနည်းငယ် ဒဏ်ရာရထားပြီး သတိလစ်သလို ဖြစ်နေပါသည်\n"
+            "8. ဆက်သွယ်ရန် - ဒေါက်တာသန့်၊ ရန်ကုန်အထွေထွေဆေးရုံကြီး - ၀၉၉၈၇၆၅၄၃၂၁\n\n"
+            "*မှတ်ချက်:* နောက်အဆင့်တွင် ဓာတ်ပုံထည့်သွင်းနိုင်ပါသည်။"
         ),
         "Request Rescue": (
-            "*Rescue Request*\n\n"
-            "Please provide the following information in a single message:\n\n"
-            "1. Exact location (be as specific as possible)\n"
-            "2. Number of people needing rescue\n"
-            "3. Any injuries or medical needs\n"
-            "4. Current situation (trapped, unsafe building, etc.)\n"
-            "5. Your contact information\n\n"
-            "*Example:*\n"
-            "1. No. 123, Bogyoke Street, Kyauktada Township, Yangon. Three-story white building with blue gate, trapped on 2nd floor apartment\n"
-            "2. 4 people (2 adults, 2 children ages 7 and 3)\n"
-            "3. Elderly woman with heart condition needs medication, others appear uninjured\n"
-            "4. Building partially collapsed, stairway blocked by debris, we are in the northeast corner room\n"
-            "5. Contact: Ko Aung - 09555123456 (weak signal but SMS works)\n\n"
-            "*Note:* You can add a photo in the next step."
+            "*ကယ်ဆယ်ရေးတောင်းဆိုချက်*\n\n"
+            "ကျေးဇူးပြု၍ အောက်ပါအချက်အလက်များကို တစ်ခုတည်းသော စာတစ်စောင်တွင် ပေးပို့ပါ -\n\n"
+            "1. တိကျသော တည်နေရာ (တတ်နိုင်သမျှ အသေးစိတ်ဖော်ပြပါ)\n"
+            "2. ကယ်ဆယ်ရန် လိုအပ်သူ အရေအတွက်\n"
+            "3. ဒဏ်ရာရရှိမှု သို့မဟုတ် ဆေးဝါးလိုအပ်ချက်များ\n"
+            "4. လက်ရှိအခြေအနေ (ပိတ်မိနေခြင်း၊ မလုံခြုံသော အဆောက်အအုံ စသည်)\n"
+            "5. သင့်ဆက်သွယ်ရန်အချက်အလက်\n\n"
+            "*ဥပမာ:*\n"
+            "1. အမှတ် ၁၂၃၊ ဗိုလ်ချုပ်လမ်း၊ ကျောက်တံတားမြို့နယ်၊ ရန်ကုန်။ သုံးထပ်တိုက် အဖြူရောင် အိမ်၊ တံခါးအပြာရောင်၊ ဒုတိယထပ် တိုက်ခန်းတွင် ပိတ်မိနေပါသည်\n"
+            "2. ၄ ဦး (လူကြီး ၂ ဦး၊ ကလေး ၂ ဦး အသက် ၇ နှစ်နှင့် ၃ နှစ်)\n"
+            "3. အသက်ကြီးသော အမျိုးသမီးတစ်ဦးမှာ နှလုံးရောဂါရှိ၍ ဆေးလိုအပ်ပါသည်၊ အခြားသူများမှာ ဒဏ်ရာမရှိပါ\n"
+            "4. အဆောက်အအုံ တစ်စိတ်တစ်ပိုင်း ပြိုကျထား၊ လှေကားကို အပျက်အစီးများက ပိတ်ဆို့နေ၊ ကျွန်ုပ်တို့သည် အရှေ့မြောက်ဘက်ထောင့်ခန်းတွင် ရှိနေပါသည်\n"
+            "5. ဆက်သွယ်ရန် - ကိုအောင် - ၀၉၅၅၅၁၂၃၄၅၆ (ဖုန်းလိုင်းအားနည်းသော်လည်း SMS အလုပ်လုပ်ပါသည်)\n\n"
+            "*မှတ်ချက်:* နောက်အဆင့်တွင် ဓာတ်ပုံထည့်သွင်းနိုင်ပါသည်။"
         ),
         "Offer Help": (
-            "*Help Offer*\n\n"
-            "Please provide the following information in a single message:\n\n"
-            "1. Type of help you can provide (rescue, medical, supplies, etc.)\n"
-            "2. Your location\n"
-            "3. Resources available (vehicles, equipment, etc.)\n"
-            "4. Your contact information\n\n"
-            "*Example:*\n"
-            "1. Medical assistance and first aid, can help with minor injuries and basic emergency care\n"
-            "2. Currently at Golden Valley, Bahan Township, Yangon\n"
-            "3. Have medical supplies, first aid kits, can travel by motorcycle to affected areas\n"
-            "4. Contact: Dr. Win Myint - 09123789456, available 24 hours\n\n"
-            "*Note:* You can add a photo in the next step."
+            "*အကူအညီပေးရန် ကမ်းလှမ်းမှု*\n\n"
+            "ကျေးဇူးပြု၍ အောက်ပါအချက်အလက်များကို တစ်ခုတည်းသော စာတစ်စောင်တွင် ပေးပို့ပါ -\n\n"
+            "1. ပေးဆောင်နိုင်သည့် အကူအညီအမျိုးအစား (ကယ်ဆယ်ရေး၊ ဆေးဝါး၊ ပစ္စည်းများ စသည်)\n"
+            "2. သင့်တည်နေရာ\n"
+            "3. ရရှိနိုင်သော အရင်းအမြစ်များ (ယာဉ်များ၊ ပစ္စည်းကိရိယာများ စသည်)\n"
+            "4. သင့်ဆက်သွယ်ရန်အချက်အလက်\n\n"
+            "*ဥပမာ:*\n"
+            "1. ဆေးဝါးအကူအညီနှင့် ရှေးဦးသူနာပြုစုခြင်း၊ အသေးစား ဒဏ်ရာများနှင့် အခြေခံအရေးပေါ်စောင့်ရှောက်မှုတွင် ကူညီနိုင်\n"
+            "2. လက်ရှိတွင် ရွှေလမ်း၊ ဗဟန်းမြို့နယ်၊ ရန်ကုန်တွင် ရှိပါသည်\n"
+            "3. ဆေးဝါးပစ္စည်းများ၊ ရှေးဦးသူနာပြုစုခြင်းပစ္စည်းများ ရှိပြီး ဆိုင်ကယ်ဖြင့် ဒေသများသို့ သွားလာနိုင်ပါသည်\n"
+            "4. ဆက်သွယ်ရန် - ဒေါက်တာဝင်းမြင့် - ၀၉၁၂၃၇၈၉၄၅၆၊ ၂၄ နာရီ အဆင်သင့်ရှိပါသည်\n\n"
+            "*မှတ်ချက်:* နောက်အဆင့်တွင် ဓာတ်ပုံထည့်သွင်းနိုင်ပါသည်။"
         )
     }
     
-    return instructions.get(report_type, "Please provide all relevant information in a single message.")
+    return instructions.get(report_type, "ကျေးဇူးပြု၍ ဆက်စပ်သော အချက်အလက်အားလုံးကို စာတစ်စောင်တည်းတွင် ပေးပို့ပါ။")
 
 def determine_urgency(text: str) -> str:
     """Determine urgency level based on text content. Used as fallback."""
