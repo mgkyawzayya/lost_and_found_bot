@@ -178,20 +178,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         resize_keyboard=True
     )
 
-    # Create an inline keyboard for quick actions with Burmese
-    inline_keyboard = [
-        [
-            InlineKeyboardButton("📝 သတင်းပို့ရန်", callback_data="menu_report"),
-            InlineKeyboardButton("🔍 ရှာဖွေရန်", callback_data="menu_search")
-        ],
-        [
-            InlineKeyboardButton("🆘 အရေးပေါ်", callback_data="menu_emergency"),
-            InlineKeyboardButton("ℹ️ အကူအညီ", callback_data="menu_help")
-        ]
-    ]
-    
-    inline_markup = InlineKeyboardMarkup(inline_keyboard)
-
     await update.message.reply_text(
         "🚨 ငလျင် အရေးပေါ် တုံ့ပြန်မှု 🚨\n\n"
         "ဤဘေးအန္တရာယ်ကာလအတွင်း အရေးကြီးသတင်းအချက်အလက်များကို ဖြန့်ဝေရန် အကူအညီပေးမည်။\n\n"
