@@ -186,7 +186,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "• လူပျောက်ဆုံးမှု အစီရင်ခံစာများ ရှာဖွေရန်"
         f"\n\n{connection_warning}\n\n"
         "လျင်မြန်စွာ လုပ်ဆောင်နိုင်ရန် 👇",
-        reply_markup=inline_markup
     )
     
     # Send a second message with the keyboard
