@@ -19,7 +19,11 @@ from config.states import (
     CHOOSING_REPORT_TYPE, COLLECTING_DATA, PHOTO,
     SEARCHING_REPORT, SEND_MESSAGE, DESCRIPTION,
     SEARCH_MISSING_PERSON, SEND_MESSAGE_TO_REPORTER,
-    CHOOSING_LOCATION, SELECT_URGENCY, UPDATE_REPORT_STATUS, CHOOSE_STATUS  # Add new states
+    CHOOSING_LOCATION, SELECT_URGENCY, UPDATE_REPORT_STATUS, CHOOSE_STATUS,
+    COLLECT_NAME, COLLECT_AGE, COLLECT_GENDER, COLLECT_DESCRIPTION, 
+    COLLECT_LAST_SEEN_LOCATION, COLLECT_LAST_SEEN_TIME, COLLECT_MEDICAL_INFO,
+    COLLECT_CONTACT_INFO, COLLECT_EXACT_LOCATION, COLLECT_PEOPLE_COUNT,
+    COLLECT_INJURIES, COLLECT_BUILDING_CONDITION, COLLECT_RELATIONSHIP
 )
 from config.supabase_config import get_supabase_client
 from utils.db_utils import close_connections, update_existing_reports_status
@@ -29,7 +33,12 @@ from handlers.report_handlers import (
     choose_report_type, collect_data, finalize_report,
     photo, search_report, send_message_to_submitter, handle_skip_photo,
     search_missing_person, choose_report_to_contact, choose_location,
-    select_urgency, update_report_status, choose_status  # Add new handlers
+    select_urgency, update_report_status, choose_status,
+    collect_name, collect_age, collect_gender, collect_description,
+    collect_last_seen_location, collect_last_seen_time, collect_medical_info,
+    collect_contact_info, collect_exact_location, collect_exact_location_coordinates,
+    collect_people_count, collect_injuries, collect_building_condition,
+    collect_relationship
 )
 # Import contact handler
 from handlers.contact_handler import contact_handler
@@ -534,15 +543,54 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            CHOOSING_REPORT_TYPE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_greeting)  # Use greeting handler first
+                CHOOSING_REPORT_TYPE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_greeting)
             ],
             CHOOSING_LOCATION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, choose_location)
             ],
-            COLLECTING_DATA: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_data)
+            # Step-by-step form collection states
+            COLLECT_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_name)
             ],
+            COLLECT_AGE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_age)
+            ],
+            COLLECT_GENDER: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_gender)
+            ],
+            COLLECT_DESCRIPTION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_description)
+            ],
+            COLLECT_LAST_SEEN_LOCATION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_last_seen_location)
+            ],
+            COLLECT_EXACT_LOCATION: [
+                MessageHandler(filters.LOCATION, collect_exact_location_coordinates),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_exact_location)
+            ],
+            COLLECT_LAST_SEEN_TIME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_last_seen_time)
+            ],
+            COLLECT_MEDICAL_INFO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_medical_info)
+            ],
+            COLLECT_CONTACT_INFO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_contact_info)
+            ],
+            COLLECT_PEOPLE_COUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_people_count)
+            ],
+            COLLECT_INJURIES: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_injuries)
+            ],
+            COLLECT_BUILDING_CONDITION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_building_condition)
+            ],
+            COLLECT_RELATIONSHIP: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_relationship)
+            ],
+            # The rest of your existing states
             SELECT_URGENCY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, select_urgency)
             ],

@@ -15,9 +15,14 @@ from utils.message_utils import escape_markdown_v2
 from utils.db_utils import save_report, get_report_by_id, search_reports_by_content, search_missing_people, get_report, update_report_status_in_db
 from config.constants import PRIORITIES, CHANNEL_ID
 from config.states import (
-    PHOTO, COLLECTING_DATA, SEARCHING_REPORT, DESCRIPTION, SEND_MESSAGE,
-    SEARCH_MISSING_PERSON, SEND_MESSAGE_TO_REPORTER, CHOOSING_LOCATION, CHOOSING_REPORT_TYPE,
-    SELECT_URGENCY, UPDATE_REPORT_STATUS, CHOOSE_STATUS  # Add CHOOSE_STATUS here
+    CHOOSING_REPORT_TYPE, COLLECTING_DATA, PHOTO,
+    SEARCHING_REPORT, SEND_MESSAGE, DESCRIPTION,
+    SEARCH_MISSING_PERSON, SEND_MESSAGE_TO_REPORTER,
+    CHOOSING_LOCATION, SELECT_URGENCY, UPDATE_REPORT_STATUS, CHOOSE_STATUS,
+    COLLECT_NAME, COLLECT_AGE, COLLECT_GENDER, COLLECT_DESCRIPTION, 
+    COLLECT_LAST_SEEN_LOCATION, COLLECT_LAST_SEEN_TIME, COLLECT_MEDICAL_INFO,
+    COLLECT_CONTACT_INFO, COLLECT_EXACT_LOCATION, COLLECT_PEOPLE_COUNT,
+    COLLECT_INJURIES, COLLECT_BUILDING_CONDITION, COLLECT_RELATIONSHIP, COLLECT_CURRENT_LOCATION
 )
 
 # Configure logger
@@ -43,50 +48,80 @@ async def choose_report_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Make sure to set this flag to indicate we're in a conversation
     context.user_data['in_conversation'] = True
     
-    # Check if the report is high urgency (trapped/missing)
-    high_urgency_types = [
-        'Missing Person (Earthquake)', 
-        'Request Rescue'
+    # For all report types, ask for location first
+    keyboard = [
+        ['ရန်ကုန်', 'မန္တလေး', 'နေပြည်တော်'],
+        ['ပဲခူး', 'စစ်ကိုင်း', 'မကွေး'],
+        ['ဧရာဝတီ', 'တနင်္သာရီ', 'မွန်'],
+        ['ရှမ်း', 'ကချင်', 'ကယား'],
+        ['ကရင်', 'ချင်း', 'ရခိုင်'],
+        ['အခြားတည်နေရာ']
     ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     
-    if text in high_urgency_types:
-        # For high urgency reports, first ask for location
-        keyboard = [
-            ['ရန်ကုန်', 'မန္တလေး', 'နေပြည်တော်'],
-            ['ပဲခူး', 'စစ်ကိုင်း', 'မကွေး'],
-            ['ဧရာဝတီ', 'တနင်္သာရီ', 'မွန်'],
-            ['ရှမ်း', 'ကချင်', 'ကယား'],
-            ['ကရင်', 'ချင်း', 'ရခိုင်'],
-            ['အခြားတည်နေရာ']
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-        
+    # Different prompts based on report type
+    if context.user_data['report_type'] == 'Missing Person (Earthquake)':
         await update.message.reply_text(
-            "⚠️ *HIGH URGENCY ALERT* ⚠️\n\n"
+            "⚠️ *MISSING PERSON REPORT* ⚠️\n\n"
+            "Please select the location where the person was last seen:\n\n"
+            "ပျောက်ဆုံးနေသူ နောက်ဆုံးတွေ့ရှိခဲ့သည့် တည်နေရာကို ရွေးချယ်ပေးပါ။",
+            reply_markup=reply_markup,
+            parse_mode='MARKDOWN'
+        )
+    elif context.user_data['report_type'] == 'Found Person (Earthquake)':
+        await update.message.reply_text(
+            "✅ *FOUND PERSON REPORT* ✅\n\n"
+            "Please select the location where the person was found:\n\n"
+            "လူတွေ့ရှိသည့် တည်နေရာကို ရွေးချယ်ပေးပါ။",
+            reply_markup=reply_markup,
+            parse_mode='MARKDOWN'
+        )
+    elif context.user_data['report_type'] == 'Request Rescue':
+        await update.message.reply_text(
+            "⚠️ *RESCUE REQUEST* ⚠️\n\n"
             "Please select your location to help responders find you quickly:\n\n"
             "သင့်တည်နေရာကို ရွေးချယ်ပေးပါ။ ကူညီရှာဖွေသူများအတွက် အရေးကြီးပါသည်။",
             reply_markup=reply_markup,
             parse_mode='MARKDOWN'
         )
-        return CHOOSING_LOCATION
-        
-    else:
-        # For normal reports, proceed with regular data collection
-        context.user_data['form_data'] = {}
-        
-        # Get instructions based on report type
-        instructions = get_instructions_by_type(text)
-        
-        # Send instructions to user
+    elif context.user_data['report_type'] == 'Offer Help':
         await update.message.reply_text(
-            instructions,
+            "🤝 *HELP OFFERING* 🤝\n\n"
+            "Please select your location so those in need can find you:\n\n"
+            "သင့်တည်နေရာကို ရွေးချယ်ပေးပါ။ အကူအညီလိုအပ်သူများအတွက် အရေးကြီးပါသည်။",
+            reply_markup=reply_markup,
             parse_mode='MARKDOWN'
         )
-        
-        return COLLECTING_DATA
+    else:
+        await update.message.reply_text(
+            "⚙️ *NEW REPORT* ⚙️\n\n"
+            "Please select your location:\n\n"
+            "သင့်တည်နေရာကို ရွေးချယ်ပေးပါ။",
+            reply_markup=reply_markup,
+            parse_mode='MARKDOWN'
+        )
+    
+    return CHOOSING_LOCATION
+
+async def collect_exact_location_coordinates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle when user shares their location."""
+    location = update.message.location
+    latitude = location.latitude
+    longitude = location.longitude
+    
+    # Store the exact coordinates
+    context.user_data['form_data']['exact_coordinates'] = f"{latitude},{longitude}"
+    
+    # Acknowledge receipt of location
+    await update.message.reply_text(
+        f"✅ တိကျသော တည်နေရာလိုင်း {latitude}, {longitude} ကို လက်ခံရရှိပါပြီ။\n\n"
+        "နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန်ကို ရိုက်ထည့်ပါ (ဥပမာ - မတ်လ ၃၀ ရက်၊ ၂၀၂၅၊ နံနက် ၉နာရီ):"
+    )
+    
+    return COLLECT_LAST_SEEN_TIME
 
 async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle location selection for high urgency reports."""
+    """Handle location selection for all report types with step-by-step forms."""
     location = update.message.text
     context.user_data['location'] = location
     
@@ -136,92 +171,62 @@ async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Remove keyboard to hide location selector buttons
     reply_markup = ReplyKeyboardRemove()
     
-    # Get the appropriate instructions and example based on report type
-    if context.user_data['report_type'] == 'Missing Person (Earthquake)':
-        instructions = (
-            "ပျောက်ဆုံးနေသူနှင့် ပတ်သက်သည့် အချက်အလက်များကို ဖြည့်စွက်ပေးပါ။\n"
-            "1. အမည်အပြည့်အစုံ\n"
-            "2. အသက်\n"
-            "3. ကျား/မ\n"
-            "4. နောက်ဆုံးတွေ့ရှိခဲ့သည့်နေရာ (အသေးစိတ်ဖော်ပြပါ)\n"
-            "5. ကိုယ်ခန္ဓာဖော်ပြချက်\n"
-            "6. နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန် (ရက်စွဲ/အချိန်)\n"
-            "7. သင့်ဆက်သွယ်ရန်အချက်အလက်"
+    # Store the report type for reference in subsequent steps
+    report_type = context.user_data.get('report_type', '')
+    
+    # Start the step-by-step form process based on report type
+    if report_type == 'Missing Person (Earthquake)':
+        # For missing person reports
+        await update.message.reply_text(
+            f"တည်နေရာ {location} အတွက် သင့်အစီရင်ခံစာကို စတင်ပါပြီ။\n\n"
+            f"ပျောက်ဆုံးနေသူနှင့် ပတ်သက်သည့် အချက်အလက်များကို တစ်ဆင့်ချင်းစီ မေးပါမည်။\n\n"
+            f"ပထမဦးစွာ ပျောက်ဆုံးနေသူ၏ အမည်အပြည့်အစုံကို ရိုက်ထည့်ပါ:",
+            reply_markup=reply_markup
         )
+        return COLLECT_NAME
         
-        # Add example for Mandalay
-        if location == "မန္တလေး":
-            example = (
-                "\nဥပမာ:\n"
-                "1. မင်းမင်း\n"
-                "2. ၃၀ နှစ်\n"
-                "3. ကျား\n"
-                "4. ၈၆ လမ်း၊ ၃၈ နှင့် ၃၉ လမ်းကြား၊ မန္တလေးမြို့\n"
-                "5. အရပ် ၅ပေ ၇လက်မ၊ ဆံပင်အတို၊ မျက်မှန်တပ်ထားသူ၊ စကတ်အိတ်ပါသော အနက်ရောင်ဘောင်းဘီဝတ်ဆင်ထားသူ\n"
-                "6. မတ်လ ၃၀ ရက်၊ ၂၀၂၅၊ နံနက် ၉နာရီ\n"
-                "7. ဖုန်း - ၀၉၁၂၃၄၅၆၇၈၉၊ ညီမဖြစ်သူမှ ဆက်သွယ်ခြင်း"
-            )
-        else:
-            example = (
-                "\nဥပမာ:\n"
-                "1. မောင်အောင်\n"
-                "2. ၂၅ နှစ်\n"
-                "3. ကျား\n" 
-                f"4. {location} မြို့ (တိကျသော လိပ်စာဖော်ပြပါ)\n"
-                "5. အရပ် ၅ပေ ၉လက်မ၊ ဆံပင်အနက်၊ ဂျင်းဘောင်းဘီအပြာနှင့် တီရှပ်အနက်ဝတ်ဆင်ထားသူ\n"
-                "6. မတ်လ ၃၀ ရက်၊ ၂၀၂၅၊ နံနက် ၁၀နာရီ\n"
-                "7. ဖုန်း - ၀၉၅၅၅၁၂၃၄၅၆၊ ညီအစ်ကိုဖြစ်သူမှ ဆက်သွယ်ခြင်း"
-            )
+    elif report_type == 'Found Person (Earthquake)':
+        # For found person reports
+        await update.message.reply_text(
+            f"တည်နေရာ {location} အတွက် လူတွေ့ရှိမှု အစီရင်ခံစာကို စတင်ပါပြီ။\n\n"
+            f"တွေ့ရှိထားသူနှင့် ပတ်သက်သည့် အချက်အလက်များကို တစ်ဆင့်ချင်းစီ မေးပါမည်။\n\n"
+            f"ပထမဦးစွာ တွေ့ရှိထားသူ၏ အမည်ကို ရိုက်ထည့်ပါ (မသိပါက 'အမည်မသိ' ဟု ရိုက်ထည့်ပါ):",
+            reply_markup=reply_markup
+        )
+        return COLLECT_NAME
+        
+    elif report_type == 'Request Rescue':
+        # For rescue requests
+        await update.message.reply_text(
+            f"တည်နေရာ {location} အတွက် သင့်ကယ်ဆယ်ရေးတောင်းဆိုချက်ကို စတင်ပါပြီ။\n\n"
+            f"ကယ်ဆယ်ရေးအတွက် လိုအပ်သည့် အချက်အလက်များကို တစ်ဆင့်ချင်းစီ မေးပါမည်။\n\n"
+            f"ပထမဦးစွာ ပိတ်မိနေသူ အရေအတွက်ကို ရိုက်ထည့်ပါ (ဥပမာ - ၃ ဦး, 4 people):",
+            reply_markup=reply_markup
+        )
+        return COLLECT_PEOPLE_COUNT
+    
+    elif report_type == 'Offer Help':
+        # For help offers
+        await update.message.reply_text(
+            f"တည်နေရာ {location} အတွက် သင့်အကူအညီပေးရန် ကမ်းလှမ်းမှုကို စတင်ပါပြီ။\n\n"
+            f"ကူညီပေးနိုင်မည့် အချက်အလက်များကို တစ်ဆင့်ချင်းစီ မေးပါမည်။\n\n"
+            f"ပထမဦးစွာ သင့်အမည်ကို ရိုက်ထည့်ပါ:",
+            reply_markup=reply_markup
+        )
+        return COLLECT_NAME
+    
+    # Catch-all for any other report types (just in case)
+    else:
+        # Get instructions based on report type
+        instructions = get_instructions_by_type(report_type)
         
         await update.message.reply_text(
             f"တည်နေရာ {location} အတွက် သင့်အစီရင်ခံစာကို စတင်ပါပြီ။\n\n"
-            f"{instructions}\n{example}",
+            f"{instructions}",
             reply_markup=reply_markup
         )
-        
-    elif context.user_data['report_type'] == 'Request Rescue':
-        instructions = (
-            "ကယ်ဆယ်ရေးအတွက် အောက်ပါအချက်အလက်များကို ပေးပါ -\n"
-            "1. ပိတ်မိနေသူ အရေအတွက်\n"
-            "2. တိကျသော လိပ်စာ/တည်နေရာ\n"
-            "3. အဆောက်အအုံအခြေအနေ\n"
-            "4. ဒဏ်ရာရရှိမှုရှိပါသလား?\n"
-            "5. အရေးပေါ်လိုအပ်ချက်များ (ဆေးဝါး၊ ရေ၊ အစားအစာ)\n"
-            "6. သင့်အမည်နှင့် ပိတ်မိနေသူများနှင့် ဆက်နွယ်မှု\n"
-            "7. အခြားဆက်သွယ်ရန်နည်းလမ်း"
-        )
-        
-        # Add example for Mandalay
-        if location == "မန္တလေး":
-            example = (
-                "\nဥပမာ:\n"
-                "1. ၃ ဦး (လူကြီး ၂ ဦး၊ ကလေး ၁ ဦး)\n"
-                "2. အမှတ် ၄၅၆၊ ၃၅ လမ်း၊ ၇၆ နှင့် ၇၇ လမ်းကြား၊ မန္တလေးမြို့\n"
-                "3. နှစ်ထပ်အဆောက်အအုံ၏ ပထမထပ်တွင် ပိတ်မိနေပြီး လှေကားပြိုကျ၍ ထွက်မရပါ\n"
-                "4. ကလေးမှာ ခြေတွင် ဒဏ်ရာအနည်းငယ်ရထားပါသည်၊ အခြားသူများမှာ ဒဏ်ရာမရှိပါ\n"
-                "5. ရေနှင့် ကလေးအတွက် ဆေးဝါးလိုအပ်ပါသည်\n"
-                "6. ကျွန်ုပ်အမည် - မင်းမင်း၊ မိသားစုဝင်များနှင့်အတူရှိ\n"
-                "7. ဖုန်း - ၀၉၁၂၃၄၅၆၇၈၉ (ချိတ်ဆက်မှုအားနည်းပါသည်)"
-            )
-        else:
-            example = (
-                "\nဥပမာ:\n"
-                "1. ၄ ဦး (လူကြီး ၂ ဦး၊ ကလေး ၂ ဦး)\n"
-                f"2. {location} မြို့ (တိကျသော လိပ်စာဖော်ပြပါ)\n"
-                "3. အဆောက်အအုံ တစ်စိတ်တစ်ပိုင်း ပြိုကျထား၊ လှေကားကို အပျက်အစီးများက ပိတ်ဆို့နေ\n"
-                "4. အသက်ကြီးသော အမျိုးသမီးတစ်ဦးမှာ နှလုံးရောဂါရှိ၍ ဆေးလိုအပ်ပါသည်\n"
-                "5. ရေ၊ အစားအစာနှင့် ဆေးဝါးအကူအညီလိုအပ်ပါသည်\n"
-                "6. ကျွန်ုပ်အမည် - ကိုဝင်း၊ မိသားစုဝင်များနှင့်အတူရှိ\n"
-                "7. ဖုန်း - ၀၉၈၇၆၅၄၃၂၁၀ (ချိတ်ဆက်မှုအားနည်းပါသည်)"
-            )
-        
-        await update.message.reply_text(
-            f"တည်နေရာ {location} အတွက် သင့်ကယ်ဆယ်ရေးတောင်းဆိုချက်ကို စတင်ပါပြီ။\n\n"
-            f"{instructions}\n{example}",
-            reply_markup=reply_markup
-        )
-    
-    return COLLECTING_DATA
+        return COLLECTING_DATA
+
 
 async def collect_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Store all provided data at once and ask for urgency level, with validation."""
@@ -1351,3 +1356,402 @@ async def choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             "❌ An error occurred while updating the report status. Please try again later."
         )
         return ConversationHandler.END
+async def collect_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect the name of the missing person."""
+    name = update.message.text.strip()
+    
+    # Validate input
+    if len(name) < 2:
+        await update.message.reply_text(
+            "❌ အမည်သည် အနည်းဆုံး စာလုံး ၂ လုံး ရှိရပါမည်။ ကျေးဇူးပြု၍ ထပ်စမ်းကြည့်ပါ။"
+        )
+        return COLLECT_NAME
+    
+    # Store the collected data
+    context.user_data['form_data']['name'] = name
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "ပျောက်ဆုံးနေသူ၏ အသက်ကို ရိုက်ထည့်ပါ (ဥပမာ - ၂၅ နှစ်, 25 years):"
+    )
+    return COLLECT_AGE
+
+async def collect_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect the age of the missing person."""
+    age = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['age'] = age
+    
+    # Proceed to next step - gender selection with buttons
+    keyboard = [
+        ["ကျား (Male)", "မ (Female)"],
+        ["အခြား (Other)"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    
+    await update.message.reply_text(
+        "ပျောက်ဆုံးနေသူ၏ ကျား/မ ကို ရွေးချယ်ပါ:",
+        reply_markup=reply_markup
+    )
+    return COLLECT_GENDER
+
+async def collect_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect the gender of the missing person."""
+    gender = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['gender'] = gender
+    
+    # Proceed to next step
+    reply_markup = ReplyKeyboardRemove()
+    await update.message.reply_text(
+        "ပျောက်ဆုံးနေသူ၏ ကိုယ်ခန္ဓာဖော်ပြချက်ကို ရိုက်ထည့်ပါ (အရပ်၊ ဝတ်စားဆင်ယင်မှု၊ အခြားသိသာသော လက္ခဏာများ):",
+        reply_markup=reply_markup
+    )
+    return COLLECT_DESCRIPTION
+
+async def collect_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect physical description of the missing person."""
+    description = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['description'] = description
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "နောက်ဆုံးတွေ့ရှိခဲ့သည့်နေရာကို အသေးစိတ်ဖော်ပြပါ (တတ်နိုင်သမျှ တိကျသော လိပ်စာဖြင့်):"
+    )
+    return COLLECT_LAST_SEEN_LOCATION
+
+# Modified for Found Person flow
+async def collect_last_seen_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect the last seen location or the found location."""
+    location = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['last_seen_location'] = location
+    
+    # Get the report type to determine the next step
+    report_type = context.user_data.get('report_type', '')
+    
+    # Ask if they want to share exact coordinates or pin location on map
+    keyboard = [
+        ["တည်နေရာ တိကျစွာမသိပါ"],
+        ["တည်နေရာ စာသားဖြင့် ဖော်ပြပြီးပါပြီ"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    
+    if report_type == 'Found Person (Earthquake)':
+        await update.message.reply_text(
+            "တည်နေရာ တိကျစွာသိပါက Live Location ပို့နိုင်ပါသည်။ မသိပါက သို့မဟုတ် လိပ်စာဖြင့်သာ ဖော်ပြလိုပါက ခလုတ်ကိုနှိပ်ပါ:",
+            reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(
+            "တည်နေရာ တိကျစွာသိပါက Live Location ပို့နိုင်ပါသည်။ မသိပါက သို့မဟုတ် လိပ်စာဖြင့်သာ ဖော်ပြလိုပါက ခလုတ်ကိုနှိပ်ပါ:",
+            reply_markup=reply_markup
+        )
+    
+    return COLLECT_EXACT_LOCATION
+
+# Modified collect_exact_location to handle different report types
+async def collect_exact_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect exact location/map pin if available."""
+    response = update.message.text.strip()
+    
+    # If they provided a location message with coordinates
+    if hasattr(update.message, 'location') and update.message.location:
+        latitude = update.message.location.latitude
+        longitude = update.message.location.longitude
+        context.user_data['form_data']['exact_coordinates'] = f"{latitude},{longitude}"
+    else:
+        # They chose to skip or don't have exact coordinates
+        context.user_data['form_data']['exact_coordinates'] = "Not provided"
+    
+    # Get the report type to determine the next step
+    report_type = context.user_data.get('report_type', '')
+    
+    # Proceed to the appropriate next step based on report type
+    reply_markup = ReplyKeyboardRemove()
+    
+    if report_type == 'Missing Person (Earthquake)':
+        await update.message.reply_text(
+            "နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန်ကို ရိုက်ထည့်ပါ (ဥပမာ - မတ်လ ၃၀ ရက်၊ ၂၀၂၅၊ နံနက် ၉နာရီ):",
+            reply_markup=reply_markup
+        )
+        return COLLECT_LAST_SEEN_TIME
+    elif report_type == 'Found Person (Earthquake)':
+        await update.message.reply_text(
+            "လက်ရှိတည်နေရာ/အခြေအနေကို ဖော်ပြပါ (ဆေးရုံ၊ ကယ်ဆယ်ရေးစခန်း၊ အမှတ်စသည်):",
+            reply_markup=reply_markup
+        )
+        return COLLECT_CURRENT_LOCATION
+    elif report_type == 'Request Rescue':
+        await update.message.reply_text(
+            "ဒဏ်ရာရရှိမှု သို့မဟုတ် ဆေးဝါးလိုအပ်ချက်များရှိပါက ဖော်ပြပါ (မရှိပါက 'မရှိပါ' ဟု ရိုက်ပါ):",
+            reply_markup=reply_markup
+        )
+        return COLLECT_INJURIES
+    elif report_type == 'Offer Help':
+        await update.message.reply_text(
+            "ပေးဆောင်နိုင်သည့် အကူအညီအမျိုးအစားကို ဖော်ပြပါ (ကယ်ဆယ်ရေး၊ ဆေးဝါး၊ ပစ္စည်းများ စသည်):",
+            reply_markup=reply_markup
+        )
+        return COLLECT_HELP_TYPE
+    else:
+        # Default path for other report types
+        await update.message.reply_text(
+            "သင့်ဆက်သွယ်ရန်အချက်အလက်ကို ဖော်ပြပါ (ဖုန်းနံပါတ်၊ Telegram ID စသည်):",
+            reply_markup=reply_markup
+        )
+        return COLLECT_CONTACT_INFO
+
+
+async def collect_injuries(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect information about injuries for rescue requests."""
+    injuries = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['injuries'] = injuries
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "လက်ရှိအခြေအနေကို ဖော်ပြပါ (အဆောက်အဦးအခြေအနေ၊ ပိတ်မိနေမှု၊ အခြားအန္တရာယ်ရှိသောအခြေအနေများ):"
+    )
+    return COLLECT_BUILDING_CONDITION
+    
+async def collect_building_condition(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect information about building condition for rescue requests."""
+    building_condition = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['building_condition'] = building_condition
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "သင့်အမည်နှင့် ပိတ်မိနေသူများနှင့် ဆက်နွယ်မှုကို ဖော်ပြပါ (ဥပမာ - ကျွန်ုပ်အမည် - ကိုဝင်း၊ မိသားစုဝင်များနှင့်အတူရှိ):"
+    )
+    return COLLECT_RELATIONSHIP
+    
+async def collect_relationship(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect relationship information for rescue requests."""
+    relationship = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['relationship'] = relationship
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "သင့်ဆက်သွယ်ရန်အချက်အလက်ကို ဖော်ပြပါ (ဖုန်းနံပါတ်၊ Telegram ID စသည်):"
+    )
+    return COLLECT_CONTACT_INFO  # Reuse the contact info collection step
+
+async def collect_last_seen_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect when the person was last seen."""
+    last_seen_time = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['last_seen_time'] = last_seen_time
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "ဆေးဝါးအခြေအနေ သို့မဟုတ် အထူးလိုအပ်ချက်များရှိပါက ဖော်ပြပါ (မရှိပါက 'မရှိပါ' ဟု ရိုက်ပါ):"
+    )
+    return COLLECT_MEDICAL_INFO
+
+async def collect_medical_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect medical conditions or special needs."""
+    medical_info = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['medical_info'] = medical_info
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "သင့်ဆက်သွယ်ရန်အချက်အလက်နှင့် ပျောက်ဆုံးနေသူနှင့် ဆက်နွယ်မှုကို ပေးပါ (ဥပမာ - ဖုန်း ၀၉၁၂၃၄၅၆၇၈၉၊ ညီမဖြစ်သူမှ ဆက်သွယ်ခြင်း):"
+    )
+    return COLLECT_CONTACT_INFO
+
+async def collect_contact_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect contact information and compile all form data based on report type."""
+    contact_info = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['contact_info'] = contact_info
+    
+    # Compile all data into a single all_data string for storage based on report type
+    form_data = context.user_data['form_data']
+    report_type = context.user_data.get('report_type', '')
+    
+    if report_type == 'Missing Person (Earthquake)':
+        # Format for missing person reports
+        all_data = (
+            f"အမည်: {form_data.get('name', 'N/A')}\n"
+            f"အသက်: {form_data.get('age', 'N/A')}\n"
+            f"ကျား/မ: {form_data.get('gender', 'N/A')}\n"
+            f"ကိုယ်ခန္ဓာဖော်ပြချက်: {form_data.get('description', 'N/A')}\n"
+            f"နောက်ဆုံးတွေ့ရှိခဲ့သည့်နေရာ: {form_data.get('last_seen_location', 'N/A')}\n"
+            f"နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန်: {form_data.get('last_seen_time', 'N/A')}\n"
+            f"ဆေးဝါးအခြေအနေ: {form_data.get('medical_info', 'N/A')}\n"
+            f"ဆက်သွယ်ရန်အချက်အလက်: {form_data.get('contact_info', 'N/A')}\n"
+        )
+        
+        if 'exact_coordinates' in form_data and form_data['exact_coordinates'] != "Not provided":
+            all_data += f"9. တိကျသော တည်နေရာ: {form_data.get('exact_coordinates')}\n"
+    
+    elif report_type == 'Found Person (Earthquake)':
+        # Format for found person reports
+        all_data = (
+            f"တွေ့ရှိသူ၏ အမည်: {form_data.get('name', 'N/A')}\n"
+            f"ခန့်မှန်းအသက်: {form_data.get('age', 'N/A')}\n"
+            f"ကျား/မ: {form_data.get('gender', 'N/A')}\n"
+            f"ကိုယ်ခန္ဓာဖော်ပြချက်: {form_data.get('description', 'N/A')}\n"
+            f"တွေ့ရှိခဲ့သည့်နေရာ: {form_data.get('last_seen_location', 'N/A')}\n"
+            f"လက်ရှိတည်နေရာ/အခြေအနေ: {form_data.get('current_location', 'N/A')}\n"
+            f"ဒဏ်ရာရရှိမှု: {form_data.get('injuries', 'N/A')}\n"
+            f"ဆက်သွယ်ရန်အချက်အလက်: {form_data.get('contact_info', 'N/A')}\n"
+        )
+        
+        if 'exact_coordinates' in form_data and form_data['exact_coordinates'] != "Not provided":
+            all_data += f"9. တိကျသော တည်နေရာ: {form_data.get('exact_coordinates')}\n"
+    
+    elif report_type == 'Request Rescue':
+        # Format for rescue requests
+        all_data = (
+            f"ပိတ်မိနေသူ အရေအတွက်: {form_data.get('people_count', 'N/A')}\n"
+            f"တိကျသော တည်နေရာ: {form_data.get('last_seen_location', 'N/A')}\n"
+            f"အဆောက်အအုံအခြေအနေ: {form_data.get('building_condition', 'N/A')}\n"
+            f"ဒဏ်ရာရရှိမှု: {form_data.get('injuries', 'N/A')}\n"
+            f"ဆက်နွယ်မှု: {form_data.get('relationship', 'N/A')}\n"
+            f"ဆက်သွယ်ရန်အချက်အလက်: {form_data.get('contact_info', 'N/A')}\n"
+        )
+        
+        if 'exact_coordinates' in form_data and form_data['exact_coordinates'] != "Not provided":
+            all_data += f"တိကျသော တည်နေရာ: {form_data.get('exact_coordinates')}\n"
+    
+    elif report_type == 'Offer Help':
+        # Format for help offers
+        all_data = (
+            f"အမည်: {form_data.get('name', 'N/A')}\n"
+            f"ပေးဆောင်နိုင်သည့် အကူအညီအမျိုးအစား: {form_data.get('help_type', 'N/A')}\n"
+            f"ရရှိနိုင်သော အရင်းအမြစ်များ: {form_data.get('resources', 'N/A')}\n"
+            f"ရရှိနိုင်သည့် အချိန်: {form_data.get('availability', 'N/A')}\n"
+            f"ဆက်သွယ်ရန်အချက်အလက်: {form_data.get('contact_info', 'N/A')}\n"
+        )
+        
+        if 'exact_coordinates' in form_data and form_data['exact_coordinates'] != "Not provided":
+            all_data += f"တိကျသော တည်နေရာ: {form_data.get('exact_coordinates')}\n"
+    
+    else:
+        # Generic format for other report types
+        all_data = "\n".join([f"{k}: {v}" for k, v in form_data.items()])
+    
+    # Store the compiled data
+    context.user_data['all_data'] = all_data
+    
+    # Show a summary of their entries and confirm
+    await update.message.reply_text(
+        "အောက်ပါ အချက်အလက်များကို သင် ထည့်သွင်းခဲ့ပါသည်။ အားလုံးမှန်ကန်ပါသလား?\n\n"
+        f"{all_data}\n\n"
+        "ဆက်လက်ရန် 'မှန်ကန်ပါသည်' ဟု ရိုက်ပါ။ ပြင်ဆင်လိုပါက /cancel သုံး၍ အစမှပြန်စပါ။"
+    )
+    
+    # Generate a unique report ID
+    prefix = context.user_data.get('case_prefix', '')
+    if prefix:
+        report_id = f"{prefix.upper()}-{str(uuid.uuid4())[:6].upper()}"
+    else:
+        report_id = str(uuid.uuid4())[:8].upper()
+        
+    context.user_data['report_id'] = report_id
+    
+    # Create urgency selection keyboard
+    keyboard = [
+        ["အလွန်အရေးပေါ် (ဆေးကုသမှု လိုအပ်)"],
+        ["အရေးပေါ် (ပိတ်မိနေ/ပျောက်ဆုံး)"],
+        ["အလယ်အလတ် (လုံခြုံသော်လည်း ကွဲကွာနေ)"],
+        ["အရေးမကြီး (သတင်းအချက်အလက်သာ)"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard, 
+        one_time_keyboard=True, 
+        resize_keyboard=True
+    )
+
+    await update.message.reply_text(
+        f"အချက်အလက်များ ပေးပို့သည့်အတွက် ကျေးဇူးတင်ပါသည်။ သင့် အစီရင်ခံစာ ID မှာ: *{report_id}*\n\n"
+        "သင့် အစီရင်ခံစာ၏ အရေးပေါ်အဆင့်ကို ရွေးချယ်ပါ:",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
+    )
+    
+    return SELECT_URGENCY
+
+# Similar handlers for rescue requests
+async def collect_people_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect number of people trapped or in need of rescue."""
+    people_count = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['people_count'] = people_count
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "တိကျသော လိပ်စာနှင့် တည်နေရာကို အသေးစိတ်ဖော်ပြပါ (အဆောက်အဦး အမျိုးအစား၊ အဆောက်အဦး အရောင်၊ ထူးခြားသော အမှတ်အသားများ စသည်ဖြင့်):"
+    )
+    return COLLECT_LAST_SEEN_LOCATION  # Reuse this state for address collection
+
+# For Found Person reports
+async def collect_current_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect the current location of a found person."""
+    current_location = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['current_location'] = current_location
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "ဒဏ်ရာရရှိမှု သို့မဟုတ် ဆေးဝါးလိုအပ်ချက်များရှိပါက ဖော်ပြပါ (မရှိပါက 'မရှိပါ' ဟု ရိုက်ပါ):"
+    )
+    return COLLECT_INJURIES
+
+# For Offer Help reports
+async def collect_help_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect the type of help being offered."""
+    help_type = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['help_type'] = help_type
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "ရရှိနိုင်သော အရင်းအမြစ်များကို ဖော်ပြပါ (ယာဉ်များ၊ ပစ္စည်းကိရိယာများ၊ ဆေးဝါးပစ္စည်းများ စသည်):"
+    )
+    return COLLECT_RESOURCES
+
+async def collect_resources(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect the resources available for help."""
+    resources = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['resources'] = resources
+    
+    # Proceed to next step
+    await update.message.reply_text(
+        "ရရှိနိုင်သည့် အချိန်ကို ဖော်ပြပါ (ဥပမာ - ၂၄ နာရီ အဆင်သင့်ရှိ၊ နေ့အချိန်သာ):"
+    )
+    return COLLECT_AVAILABILITY
+
+async def collect_availability(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collect the availability of help."""
+    availability = update.message.text.strip()
+    
+    # Store the collected data
+    context.user_data['form_data']['availability'] = availability
+    
+    # Proceed to next step - collect contact info
+    await update.message.reply_text(
+        "သင့်ဆက်သွယ်ရန်အချက်အလက်ကို ဖော်ပြပါ (ဖုန်းနံပါတ်၊ Telegram ID စသည်):"
+    )
+    return COLLECT_CONTACT_INFO
