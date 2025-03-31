@@ -1614,7 +1614,7 @@ async def collect_contact_info(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         
         if 'exact_coordinates' in form_data and form_data['exact_coordinates'] != "Not provided":
-            all_data += f"9. တိကျသော တည်နေရာ: {form_data.get('exact_coordinates')}\n"
+            all_data += f"တိကျသော တည်နေရာ: {form_data.get('exact_coordinates')}\n"
     
     elif report_type == 'Request Rescue':
         # Format for rescue requests
@@ -1716,7 +1716,6 @@ async def collect_current_location(update: Update, context: ContextTypes.DEFAULT
     )
     return COLLECT_INJURIES
 
-# For Offer Help reports
 async def collect_help_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collect the type of help being offered."""
     help_type = update.message.text.strip()

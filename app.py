@@ -23,7 +23,8 @@ from config.states import (
     COLLECT_NAME, COLLECT_AGE, COLLECT_GENDER, COLLECT_DESCRIPTION, 
     COLLECT_LAST_SEEN_LOCATION, COLLECT_LAST_SEEN_TIME, COLLECT_MEDICAL_INFO,
     COLLECT_CONTACT_INFO, COLLECT_EXACT_LOCATION, COLLECT_PEOPLE_COUNT,
-    COLLECT_INJURIES, COLLECT_BUILDING_CONDITION, COLLECT_RELATIONSHIP
+    COLLECT_INJURIES, COLLECT_BUILDING_CONDITION, COLLECT_RELATIONSHIP, 
+    COLLECT_CURRENT_LOCATION, COLLECT_HELP_TYPE, COLLECT_RESOURCES, COLLECT_AVAILABILITY
 )
 from config.supabase_config import get_supabase_client
 from utils.db_utils import close_connections, update_existing_reports_status
@@ -38,7 +39,9 @@ from handlers.report_handlers import (
     collect_last_seen_location, collect_last_seen_time, collect_medical_info,
     collect_contact_info, collect_exact_location, collect_exact_location_coordinates,
     collect_people_count, collect_injuries, collect_building_condition,
-    collect_relationship
+    collect_relationship, collect_current_location,
+    collect_help_type, collect_resources, collect_availability
+
 )
 # Import contact handler
 from handlers.contact_handler import contact_handler
@@ -543,11 +546,14 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-                CHOOSING_REPORT_TYPE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_greeting)
+            CHOOSING_REPORT_TYPE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, choose_report_type)
             ],
             CHOOSING_LOCATION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, choose_location)
+            ],
+            COLLECTING_DATA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_data)
             ],
             # Step-by-step form collection states
             COLLECT_NAME: [
@@ -590,6 +596,18 @@ def main():
             COLLECT_RELATIONSHIP: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, collect_relationship)
             ],
+            COLLECT_CURRENT_LOCATION: [  # Add this missing state
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_current_location)
+            ],
+            COLLECT_HELP_TYPE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_help_type)
+            ],
+            COLLECT_RESOURCES: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_resources)
+            ],
+            COLLECT_AVAILABILITY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_availability)
+            ],
             # The rest of your existing states
             SELECT_URGENCY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, select_urgency)
@@ -618,7 +636,16 @@ def main():
             ],
             CHOOSE_STATUS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, choose_status)
-            ]
+            ],
+            COLLECT_HELP_TYPE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_help_type)
+            ],
+            COLLECT_RESOURCES: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_resources)
+            ],
+            COLLECT_AVAILABILITY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_availability)
+            ],
         },
         fallbacks=[
             CommandHandler('cancel', cancel),
