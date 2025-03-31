@@ -12,12 +12,12 @@ from botocore.client import Config
 import os
 
 from utils.message_utils import escape_markdown_v2
-from utils.db_utils import save_report, get_report_by_id, search_reports_by_content, search_missing_people, get_report
+from utils.db_utils import save_report, get_report_by_id, search_reports_by_content, search_missing_people, get_report, update_report_status_in_db
 from config.constants import PRIORITIES, CHANNEL_ID
 from config.states import (
     PHOTO, COLLECTING_DATA, SEARCHING_REPORT, DESCRIPTION, SEND_MESSAGE,
     SEARCH_MISSING_PERSON, SEND_MESSAGE_TO_REPORTER, CHOOSING_LOCATION, CHOOSING_REPORT_TYPE,
-    SELECT_URGENCY
+    SELECT_URGENCY, UPDATE_REPORT_STATUS, CHOOSE_STATUS  # Add CHOOSE_STATUS here
 )
 
 # Configure logger
@@ -160,19 +160,38 @@ async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return COLLECTING_DATA
 
 async def collect_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Store all provided data at once and ask for urgency level."""
-    context.user_data['all_data'] = update.message.text
+    """Store all provided data at once and ask for urgency level, with validation."""
+    user_input = update.message.text
+    
+    # Get expected format for this report type
+    report_type = context.user_data.get('report_type', '')
+    expected_format = get_instructions_by_type(report_type)
+    
+    # Validate input
+    if not validate_report_data(user_input, report_type):
+        # If input is too short or looks like a greeting/simple message
+        await update.message.reply_text(
+            "❌ Your information appears to be incomplete or in the wrong format.\n\n"
+            "သင့်အချက်အလက်သည် မပြည့်စုံဟုထင်ရပါသည်။\n\n"
+            "Please provide complete information as shown in the example:\n"
+            "ကျေးဇူးပြု၍ ဥပမာပြထားသည့်အတိုင်း အချက်အလက်အပြည့်အစုံကို ပေးပါ။\n\n"
+            f"{expected_format}"
+        )
+        # Stay in the current state to let them try again
+        return COLLECTING_DATA
+    
+    # Valid data - proceed normally
+    context.user_data['all_data'] = user_input
     
     # Generate a unique report ID with location prefix if available
     prefix = context.user_data.get('case_prefix', '')
     if prefix:
-        report_id = f"{prefix}-{str(uuid.uuid4())[:6].upper()}"
+        report_id = f"{prefix.upper()}-{str(uuid.uuid4())[:6].upper()}"
     else:
         report_id = str(uuid.uuid4())[:8].upper()
         
     context.user_data['report_id'] = report_id
     
-    # Create urgency selection keyboard
     # Create urgency selection keyboard
     keyboard = [
         ["အလွန်အရေးပေါ် (ဆေးကုသမှု လိုအပ်)"],
@@ -195,11 +214,90 @@ async def collect_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     return SELECT_URGENCY
 
+def validate_report_data(text: str, report_type: str) -> bool:
+    """
+    Validate that the provided text contains appropriate report information.
+    
+    Args:
+        text: The text to validate
+        report_type: The type of report expected
+        
+    Returns:
+        True if the text appears to be valid report data, False otherwise
+    """
+    # Skip validation if for some reason report_type is not set
+    if not report_type:
+        return True
+        
+    # Check if text is too short to be a proper report
+    # Most valid reports should be at least 100 characters
+    if len(text) < 50:
+        return False
+    
+    # Check for common greetings or simple messages that are definitely not reports
+    common_greetings = [
+        "hello", "hi", "hey", "how are you", "test", "what", "why", 
+        "good morning", "good afternoon", "good evening", "help", "ဟယ်လို", 
+        "မင်္ဂလာပါ", "နေကောင်းလား", "ဘယ်လိုလဲ", "အကူအညီလိုတယ်", "စမ်းကြည့်တာ"
+    ]
+    
+    # If the text is just a simple greeting, it's not valid
+    if any(text.lower().strip() == greeting for greeting in common_greetings):
+        return False
+        
+    # If the text contains just a few words, it's probably not valid
+    word_count = len(text.split())
+    if word_count < 5:
+        return False
+    
+    # For Missing Person reports, check for required information patterns
+    if "Missing Person" in report_type:
+        # At minimum, we expect to see numbers (like ages) and some location info
+        has_numbers = bool(re.search(r'\d', text))
+        expected_keywords = ["အမည်", "နာမည်", "အသက်", "ကျား", "မ", "တွေ့", "နေရာ", 
+                            "name", "age", "male", "female", "location", "last seen"]
+        
+        # Check if at least a few expected keywords are present
+        keyword_count = sum(1 for keyword in expected_keywords if keyword.lower() in text.lower())
+        
+        return has_numbers and keyword_count >= 2
+    
+    # For Found Person reports
+    elif "Found Person" in report_type:
+        # Same pattern as missing person, but with slightly different keywords
+        has_numbers = bool(re.search(r'\d', text))
+        expected_keywords = ["တွေ့", "ရှိ", "အသက်", "ကျား", "မ", "နေရာ", "အခြေအနေ",
+                            "found", "location", "condition", "age", "male", "female"]
+        
+        keyword_count = sum(1 for keyword in expected_keywords if keyword.lower() in text.lower())
+        
+        return has_numbers and keyword_count >= 2
+    
+    # For Request Rescue
+    elif "Request Rescue" in report_type:
+        expected_keywords = ["ကယ်", "အကူအညီ", "တည်နေရာ", "လိပ်စာ", "ဒဏ်ရာ", "ပိတ်မိ", "အရေအတွက်",
+                            "rescue", "help", "location", "address", "injured", "trapped", "count", "people"]
+        
+        keyword_count = sum(1 for keyword in expected_keywords if keyword.lower() in text.lower())
+        
+        return keyword_count >= 2
+    
+    # For Offer Help
+    elif "Offer Help" in report_type:
+        expected_keywords = ["ကူညီ", "အကူအညီ", "ပေး", "တည်နေရာ", "ရရှိနိုင်", 
+                            "help", "offer", "provide", "location", "available"]
+        
+        keyword_count = sum(1 for keyword in expected_keywords if keyword.lower() in text.lower())
+        
+        return keyword_count >= 2
+    
+    # For any other report type or if we can't determine, default to true
+    return True
+
 async def select_urgency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle the selection of urgency level."""
+    """Handle the selection of urgency level with validation."""
     selected_urgency = update.message.text
     
-    # Map Burmese urgency levels to English for database storage
     # Map Burmese urgency levels to English for database storage
     urgency_map = {
         "အလွန်အရေးပေါ် (ဆေးကုသမှု လိုအပ်)": "Critical (Medical Emergency)",
@@ -211,7 +309,29 @@ async def select_urgency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "High (Trapped/Missing)": "High (Trapped/Missing)",
         "Medium (Safe but Separated)": "Medium (Safe but Separated)",
         "Low (Information Only)": "Low (Information Only)"
-    }   
+    }
+    
+    # Check if the selection is valid
+    if selected_urgency not in urgency_map:
+        # Show the keyboard again with a message
+        keyboard = [
+            ["အလွန်အရေးပေါ် (ဆေးကုသမှု လိုအပ်)"],
+            ["အရေးပေါ် (ပိတ်မိနေ/ပျောက်ဆုံး)"],
+            ["အလယ်အလတ် (လုံခြုံသော်လည်း ကွဲကွာနေ)"],
+            ["အရေးမကြီး (သတင်းအချက်အလက်သာ)"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard, 
+            one_time_keyboard=True, 
+            resize_keyboard=True
+        )
+        
+        await update.message.reply_text(
+            "❌ ကျေးဇူးပြု၍ အောက်ပါ အရေးပေါ်အဆင့်များမှ တစ်ခုကို ရွေးချယ်ပါ:\n\n"
+            "Please select one of the urgency levels from the keyboard below:",
+            reply_markup=reply_markup
+        )
+        return SELECT_URGENCY
     
     # Store the mapped urgency
     context.user_data['urgency'] = urgency_map.get(selected_urgency, selected_urgency)
@@ -236,6 +356,7 @@ async def select_urgency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     return PHOTO
 
+    
 async def finalize_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Finalize and save the report to the database"""
     try:
@@ -250,7 +371,8 @@ async def finalize_report(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             'photo_id': user_data.get('photo_id', None),  # Keep Telegram file_id
             'photo_url': user_data.get('photo_url', None),  # Add DO Spaces URL
             'photo_path': user_data.get('photo_path', None),  # Add DO Spaces path
-            'location': user_data.get('location', 'Unknown')
+            'location': user_data.get('location', 'Unknown'),
+            'status': 'Still Missing',  # Set a proper default status for new reports
         }
         
         # Get telegram user object
@@ -522,38 +644,7 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not report:
             # Check in-memory backup
             if report_id in REPORTS:
-                memory_report = REPORTS[report_id]
-                logger.info(f"Found report {report_id} in memory storage")
-                
-                # Format the time correctly for memory reports
-                report_time = memory_report.get('timestamp', 'N/A')
-                if report_time != 'N/A' and 'T' in report_time:  # ISO format has 'T' separator
-                    try:
-                        # Parse ISO format timestamp
-                        dt = datetime.fromisoformat(report_time)
-                        # If timezone info not in timestamp, assume it's already in Myanmar timezone
-                        if dt.tzinfo is None:
-                            myanmar_tz = pytz.timezone('Asia/Yangon')
-                            dt = myanmar_tz.localize(dt)
-                        report_time = dt.strftime("%Y-%m-%d %H:%M:%S") + " (Asia/Yangon)"
-                    except Exception as e:
-                        logger.error(f"Error formatting timestamp: {str(e)}")
-                
-                await update.message.reply_text(
-                    f"📋 *Report Found in Temporary Storage:*\n\n"
-                    f"📝 *Type:* {memory_report.get('report_type', 'N/A')}\n\n"
-                    f"ℹ️ *Details:*\n{memory_report.get('all_data', 'N/A')}\n\n"
-                    f"🟠 *Urgency:* {memory_report.get('urgency', 'N/A')}\n\n"
-                    f"⏰ *Submitted:* {report_time}\n\n"
-                    f"⚠️ This report is stored temporarily and will be transferred to the database soon.",
-                    parse_mode='MARKDOWN'
-                )
-                
-                # If there's a photo, send it too
-                if memory_report.get('photo'):
-                    await update.message.reply_photo(memory_report['photo'])
-                    
-                return CHOOSING_REPORT_TYPE
+                report = REPORTS[report_id]
             
             logger.info(f"No report found with ID: {report_id}")
             await update.message.reply_text(
@@ -569,10 +660,8 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         created_at = report.get('created_at', 'N/A')
         if created_at != 'N/A':
             try:
-                # Check if created_at is a string or datetime
                 if isinstance(created_at, str):
-                    # Try to parse the string to a datetime object
-                    dt = datetime.fromisoformat(created_at.replace('Z', '+00:00')) if 'Z' in created_at else datetime.fromisoformat(created_at)
+                    dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                 else:
                     dt = created_at
                 
@@ -597,20 +686,28 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         urgency_emoji = "🔴" if "Critical" in urgency else "🟠" if "High" in urgency else "🟡" if "Medium" in urgency else "🟢"
         response += f"{urgency_emoji} *Urgency:* {urgency}\n\n"
         
+        # Add status if available
+        status = report.get('status')
+        if not status or status == 'No status set' or status == 'N/A':
+            status = "Still Missing"
+            # Update the in-memory version if this is the source
+            if report_id in REPORTS:
+                REPORTS[report_id]['status'] = status
+                
+        status_emoji = "🔍" if "Missing" in status else "✅" if "Found" in status else "🏥" if "Hospitalized" in status else "⚫" if "Deceased" in status else "❓"
+        response += f"{status_emoji} *Status:* {status}\n\n"
+        
         response += f"⏰ *Submitted:* {created_at}\n"
         
         await update.message.reply_text(response, parse_mode='MARKDOWN')
         
-        # If there's a photo, send it too
-        # In the search_report function, update the photo handling part:
-
         # If there's a photo, send it too
         photo_id = report.get('photo_id')
         photo_url = report.get('photo_url')
 
         if photo_url:
             # Add the photo URL to the response
-            response += f"\n📷 *Photo:* [View Photo]({photo_url})\n"
+            await update.message.reply_text(f"📷 *Photo:* [View Photo]({photo_url})", parse_mode='MARKDOWN')
             
         if photo_id:
             try:
@@ -620,17 +717,12 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 logger.error(f"Error sending photo: {str(photo_error)}")
                 if photo_url:
                     await update.message.reply_text(
-                        f"⚠️ Could not display the photo directly, but you can view it at: {photo_url}"
+                        f"📷 This report has a photo that can be viewed at: {photo_url}"
                     )
                 else:
                     await update.message.reply_text(
-                        "⚠️ Could not display the photo associated with this report."
+                        "📷 This report has a photo but it could not be displayed."
                     )
-        elif photo_url:
-            # If we have a URL but no photo_id, prompt to view at URL
-            await update.message.reply_text(
-                f"📷 This report has a photo that can be viewed at: {photo_url}"
-            )
         
         # Show main menu after displaying report
         await asyncio.sleep(2)
@@ -826,7 +918,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
         ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
         ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
+        ['နာမည်နဲ့ လူပျောက်ရှာမယ်', 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်']
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=False, resize_keyboard=True)
 
@@ -939,8 +1031,9 @@ def format_report_message(user_data: dict, report_id: str, priority_icon: str, t
         location_info = f"📍 <b>LOCATION / တည်နေရာ:</b>\n<code>{user_data['location']}</code>\n\n"
 
     report_type_header = f"{priority_icon} <b>{user_data['report_type'].upper()}</b> {priority_icon}"
-    urgency_level = user_data['urgency']
-    urgency_emoji = "🔴" if "Critical" in urgency_level else "🟠" if "High" in urgency_level else "🟡" if "Medium" in urgency_level else "🟢"
+    urgency = report.get('urgency', 'N/A')
+    urgency_emoji = "🔴" if "Critical" in urgency else "🟠" if "High" in urgency else "🟡" if "Medium" in urgency else "🟢"
+    response += f"{urgency_emoji} *Urgency:* {urgency}\n\n"
 
     # Format the details with better spacing
     details = user_data['all_data'].strip()
@@ -951,12 +1044,11 @@ def format_report_message(user_data: dict, report_id: str, priority_icon: str, t
         photo_info = f"📷 <b>PHOTO / ဓာတ်ပုံ:</b> <a href='{user_data['photo_url']}'>View Photo</a>\n\n"
 
     return (
-        f"═════════════════════\n"
         f"{report_type_header}\n"
-        f"═════════════════════\n\n"
+        f"\n\n"
         f"🆔 <b>REPORT ID / အစီရင်ခံအမှတ်:</b>\n<code>{report_id}</code>\n\n"
         f"{location_info}"
-        f"ℹ️ <b>DETAILS / အသေးစိတ်:</b>\n<pre>{details}</pre>\n\n"
+        f"ℹ️ <b>DETAILS / အသေးစိတ်:</b>\n<p>{details}</p>\n\n"
         f"{photo_info}"
         f"{urgency_emoji} <b>URGENCY / အရေးပေါ်အဆင့်:</b>\n<code>{urgency_level}</code>\n\n"
         f"⏰ <b>REPORTED / အချိန်:</b>\n<code>{timestamp} (Asia/Yangon)</code>\n\n"
@@ -975,7 +1067,8 @@ def store_report(report_id: str, user_data: dict, user, timestamp: str) -> None:
         'photo_path': user_data.get('photo_path'),
         'user_id': user.id,
         'username': user.username,
-        'location': user_data.get('location', 'Unknown')
+        'location': user_data.get('location', 'Unknown'),
+        'status': user_data.get('status', 'Still Missing')  # Add status field with default
     }
 
 async def send_report_to_channel(bot, user_data: dict, safe_message: str) -> None:
@@ -1251,3 +1344,139 @@ def get_s3_client():
     except Exception as e:
         logger.error(f"Error creating S3 client: {str(e)}")
         return None
+
+async def update_report_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle update report status request."""
+    report_id = update.message.text.strip().upper()
+    
+    try:
+        logger.info(f"Looking for report with ID: {report_id} to update status")
+        
+        # Get report from database
+        report = await get_report(report_id)
+        
+        if not report:
+            # Check in-memory backup
+            if report_id in REPORTS:
+                report = REPORTS[report_id]
+            else:
+                logger.info(f"No report found with ID: {report_id}")
+                await update.message.reply_text(
+                    "❌ No report found with that ID. Please check and try again.\n\n"
+                    "ထို ID ဖြင့် အစီရင်ခံစာ မတွေ့ရှိပါ။ စစ်ဆေးပြီး ထပ်စမ်းကြည့်ပါ။"
+                )
+                return ConversationHandler.END
+        
+        # Get the owner's user ID 
+        owner_id = report.get('user_id')
+        
+        # Check if user is the report owner
+        if owner_id != update.effective_user.id:
+            logger.warning(f"User {update.effective_user.id} attempted to update report {report_id} owned by user {owner_id}")
+            
+            # Get your Telegram ID for comparison
+            your_id = update.effective_user.id
+            
+            await update.message.reply_text(
+                f"❌ You can only update reports that you submitted.\n\n"
+                f"This report (ID: {report_id}) belongs to user with ID: {owner_id}\n"
+                f"Your user ID is: {your_id}\n\n"
+                f"သင်တင်သွင်းခဲ့သော အစီရင်ခံစာများကိုသာ ပြင်ဆင်နိုင်ပါသည်။\n"
+                f"ဤအစီရင်ခံစာသည် အသုံးပြုသူ ID: {owner_id} ၏ ပိုင်ဆိုင်မှုဖြစ်သည်။"
+            )
+            return ConversationHandler.END
+        
+        # Store report for later use
+        context.user_data['updating_report'] = report
+        context.user_data['updating_report_id'] = report_id
+        
+        # Get current status, defaulting to "Still Missing" if not set
+        current_status = report.get('status')
+        if not current_status or current_status == 'No status set':
+            current_status = "Still Missing"
+            # Update the report object to include this default
+            report['status'] = current_status
+        
+        # Create keyboard with status options
+        keyboard = [
+            ["ပျောက်ဆုံးဆဲ (Still Missing)"],
+            ["တွေ့ရှိပြီ (Found)"],
+            ["ဆေးရုံရောက်ရှိနေ (Hospitalized)"],
+            ["ကျဆုံးသွားပြီ (Deceased)"],
+            ["အခြား (Other)"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard, 
+            one_time_keyboard=True, 
+            resize_keyboard=True
+        )
+
+        await update.message.reply_text(
+            f"လက်ရှိအခြေအနေ: *{current_status}*\n\n"
+            f"အစီရင်ခံစာ {report_id} အတွက် အခြေအနေအသစ်ကို ရွေးချယ်ပါ:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+        
+        return CHOOSE_STATUS
+        
+    except Exception as e:
+        logger.error(f"Error in update_report_status: {str(e)}", exc_info=True)
+        await update.message.reply_text(
+            "❌ An error occurred while retrieving the report. Please try again later."
+        )
+        return ConversationHandler.END
+
+async def choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle selection of new status."""
+    status_text = update.message.text.strip()
+    report_id = context.user_data.get('updating_report_id')
+    
+    if not report_id:
+        await update.message.reply_text(
+            "❌ Session expired. Please start again."
+        )
+        return ConversationHandler.END
+    
+    # Map Burmese status to database values
+    status_map = {
+        "ပျောက်ဆုံးဆဲ (Still Missing)": "Still Missing",
+        "တွေ့ရှိပြီ (Found)": "Found",
+        "ဆေးရုံရောက်ရှိနေ (Hospitalized)": "Hospitalized",
+        "ကျဆုံးသွားပြီ (Deceased)": "Deceased",
+        "အခြား (Other)": "Other"
+    }
+    
+    # Use English status for database
+    status = status_map.get(status_text, status_text)
+    
+    try:
+        # Update status in database
+        success = await update_report_status_in_db(report_id, status, update.effective_user.id)
+        
+        if success:
+            # Remove keyboard and confirm update
+            reply_markup = ReplyKeyboardRemove()
+            
+            await update.message.reply_text(
+                f"✅ Status of report {report_id} has been updated to: *{status}*\n\n"
+                f"အစီရင်ခံစာ {report_id} ၏ အခြေအနေကို *{status}* သို့ ပြောင်းလဲလိုက်ပါပြီ။",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            
+            # Return to main menu
+            return await show_main_menu(update, context)
+        else:
+            await update.message.reply_text(
+                "❌ Failed to update report status. Please try again later.\n\n"
+                "အစီရင်ခံစာ အခြေအနေ ပြောင်းလဲခြင်း မအောင်မြင်ပါ။ နောက်မှ ထပ်စမ်းကြည့်ပါ။"
+            )
+            return ConversationHandler.END
+            
+    except Exception as e:
+        logger.error(f"Error updating status: {str(e)}", exc_info=True)
+        await update.message.reply_text(
+            "❌ An error occurred while updating the report status. Please try again later."
+        )
+        return ConversationHandler.END

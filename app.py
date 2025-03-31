@@ -19,17 +19,17 @@ from config.states import (
     CHOOSING_REPORT_TYPE, COLLECTING_DATA, PHOTO,
     SEARCHING_REPORT, SEND_MESSAGE, DESCRIPTION,
     SEARCH_MISSING_PERSON, SEND_MESSAGE_TO_REPORTER,
-    CHOOSING_LOCATION, SELECT_URGENCY  # Add the new state
+    CHOOSING_LOCATION, SELECT_URGENCY, UPDATE_REPORT_STATUS, CHOOSE_STATUS  # Add new states
 )
 from config.supabase_config import get_supabase_client
-from utils.db_utils import close_connections
+from utils.db_utils import close_connections, update_existing_reports_status
 
 # Import handlers - MODIFIED: removed error_handler from this import
 from handlers.report_handlers import (
     choose_report_type, collect_data, finalize_report,
     photo, search_report, send_message_to_submitter, handle_skip_photo,
     search_missing_person, choose_report_to_contact, choose_location,
-    select_urgency  # Add this import
+    select_urgency, update_report_status, choose_status  # Add new handlers
 )
 # Import contact handler
 from handlers.contact_handler import contact_handler
@@ -168,7 +168,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
         ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
         ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
+        ['နာမည်နဲ့ လူပျောက်ရှာမယ်', 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်']  # Add new option
     ]
     
     # Set one_time_keyboard=False to make the keyboard persistent
@@ -293,11 +293,59 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ], resize_keyboard=True)
         )
         return CHOOSING_LOCATION
+
+    elif text == 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်':
+        await update.message.reply_text(
+            "အခြေအနေပြင်ဆင်လိုသည့် အစီရင်ခံစာ ID ကို ရိုက်ထည့်ပါ:\n\n"
+            "Please enter the ID of the report you want to update:",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return UPDATE_REPORT_STATUS
     
     else:
-        # For backward compatibility, pass to the original handler
-        return await choose_report_type(update, context)
+        # Show a helpful message guiding users back to the main menu options
+        await update.message.reply_text(
+            "❓ I don't understand that command. Please use the keyboard buttons to navigate.\n\n"
+            "Command ကို နားမလည်ပါ။ ကျေးဇူးပြု၍ ရွေးချယ်ခွင့်ခလုတ်များကို အသုံးပြုပါ။",
+            reply_markup=ReplyKeyboardMarkup([
+                ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+                ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+                ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+                ['နာမည်နဲ့ လူပျောက်ရှာမယ်', 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်']
+            ], resize_keyboard=True)
+        )
+        return CHOOSING_REPORT_TYPE
 
+async def handle_unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE, expected_format: str = None) -> int:
+    """
+    General handler for unexpected inputs in any state.
+    
+    Args:
+        update: The update object
+        context: The context object
+        expected_format: Optional formatted string showing expected input format
+        
+    Returns:
+        The same state to allow the user to try again
+    """
+    message = (
+        "❌ Your input doesn't match what's expected at this step.\n"
+        "သင့်ရဲ့ ထည့်သွင်းမှုသည် ဒီအဆင့်မှာ မွှော်လင့်ထားတာနဲ့ မကိုက်ညီပါ။\n\n"
+    )
+    
+    if expected_format:
+        message += f"Expected format:\n{expected_format}\n\n"
+    
+    message += (
+        "Please try again or use /cancel to start over.\n"
+        "ထပ်စမ်းကြည့်ပါ သို့မဟုတ် အစကနေစဖို့ /cancel ကိုသုံးပါ။"
+    )
+    
+    await update.message.reply_text(message)
+    
+    # Return the current state (passed from the calling handler)
+    # This must be implemented correctly in each handler that calls this function
+    return context.user_data.get('current_state', CHOOSING_REPORT_TYPE)
 
 async def restore_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Restore the main menu after completing an operation."""
@@ -305,7 +353,7 @@ async def restore_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
         ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
         ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-        ['နာမည်နဲ့ လူပျောက်ရှာမယ်']
+        ['နာမည်နဲ့ လူပျောက်ရှာမယ်', 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်']  # Add new option
     ]
     
     reply_markup = ReplyKeyboardMarkup(
@@ -331,6 +379,34 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Return to main menu
     return await restore_main_menu(update, context)
 
+async def handle_greeting(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle common greetings and direct users to the main menu."""
+    text = update.message.text.lower()
+    
+    common_greetings = [
+        "hello", "hi", "hey", "how are you", "test", 
+        "ဟယ်လို", "မင်္ဂလာပါ", "နေကောင်းလား"
+    ]
+    
+    if any(greeting in text for greeting in common_greetings):
+        await update.message.reply_text(
+            "👋 Hello! Welcome to the Lost and Found Bot.\n\n"
+            "မင်္ဂလာပါ! ပျောက်ဆုံးရှာဖွေရေး ဘော့တ်သို့ ကြိုဆိုပါတယ်။\n\n"
+            "Please use the menu below to get started:"
+            "စတင်ရန် အောက်ပါမီနူးကို အသုံးပြုပါ။",
+            reply_markup=ReplyKeyboardMarkup([
+                ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
+                ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
+                ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
+                ['နာမည်နဲ့ လူပျောက်ရှာမယ်', 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်']
+            ], resize_keyboard=True)
+        )
+        return CHOOSING_REPORT_TYPE
+    
+    # If not a recognized greeting, pass to the normal choose_action handler
+    return await choose_action(update, context)
+
+    
 # Add a new global cancel handler
 async def global_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel command that works outside of conversations."""
@@ -349,7 +425,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• အစီရင်ခံစာတိုင်းတွင် သီးသန့် ID ရှိသည် - သိမ်းထားပါ!\n"
         "• 'ID နဲ့ လူရှာမယ်' ကို အသုံးပြု၍ အစီရင်ခံစာများကို ရှာပါ\n"
         "• 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်' ကိုသုံး၍ သတင်းပို့သူထံ စာပို့ပါ\n"
-        "• 'နာမည်နဲ့ လူပျောက်ရှာမယ်' ကိုသုံး၍ အမည်ဖြင့် ရှာဖွေပါ\n\n"
+        "• 'နာမည်နဲ့ လူပျောက်ရှာမယ်' ကိုသုံး၍ အမည်ဖြင့် ရှာဖွေပါ\n"
+        "• 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်' ကိုသုံး၍ အစီရင်ခံစာ၏ အခြေအနေကို ပြင်ဆင်ပါ\n\n"
         "• စေတနာ့ဝန်ထမ်း အဖွဲ့များ ဆက်သွယ်ရန် /volunteer ကိုရိုက်ပါ\n"
         "• ရရှိနိုင်သည့် မီနူးအားလုံးစာရင်းကို ကြည့်ရန် /menu ကိုရိုက်ပါ\n\n"
         "ဘေးကင်းလုံခြုံပါစေ၊ ပျက်စီးနေသော အဆောက်အအုံများကို ရှောင်ကြဉ်ပါ!",
@@ -442,6 +519,8 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         except Exception as e:
             logger.error(f"Failed to send error message: {e}")
 
+
+
 def main():
     """Start the bot."""
     # Create the Application directly with the token and defaults
@@ -451,11 +530,12 @@ def main():
 
     
     # Main conversation handler
+    # Main conversation handler
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             CHOOSING_REPORT_TYPE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, choose_action)
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_greeting)  # Use greeting handler first
             ],
             CHOOSING_LOCATION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, choose_location)
@@ -463,11 +543,10 @@ def main():
             COLLECTING_DATA: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, collect_data)
             ],
-            SELECT_URGENCY: [  # Add the SELECT_URGENCY state handler
+            SELECT_URGENCY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, select_urgency)
             ],
             PHOTO: [
-                # Make sure photo handler gets priority over text handler
                 MessageHandler(filters.PHOTO, photo),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_skip_photo)
             ],
@@ -485,11 +564,17 @@ def main():
             ],
             SEND_MESSAGE_TO_REPORTER: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, choose_report_to_contact),
+            ],
+            UPDATE_REPORT_STATUS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, update_report_status)
+            ],
+            CHOOSE_STATUS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, choose_status)
             ]
         },
         fallbacks=[
             CommandHandler('cancel', cancel),
-            CommandHandler('menu', restore_main_menu)  # Add this to make /menu restore the keyboard
+            CommandHandler('menu', restore_main_menu)
         ]
     )
 
@@ -610,3 +695,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    asyncio.run(update_existing_reports_status())

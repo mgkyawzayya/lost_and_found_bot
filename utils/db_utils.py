@@ -83,52 +83,73 @@ def ensure_schema_exists():
         return False
     
     try:
-        # Try to create the photo_url column if it doesn't exist
-        # Using RPC is the safest way to do this through the Supabase API
-        # Note: You need to create this function in your Supabase database first
-        try:
-            supabase.rpc('add_column_if_not_exists', {
-                'table_name': pg_table,
-                'column_name': 'photo_url',
-                'column_type': 'TEXT'
-            }).execute()
-            logger.info("Verified 'photo_url' column exists in schema")
-            return True
-        except Exception as e:
-            logger.warning(f"Could not use RPC to add column: {str(e)}")
-            
-            # Fall back to direct PostgreSQL connection
+        # Try using Supabase first
+        if supabase:
+            # Use SQL via PostgreSQL connection to check and create schema
             conn = get_postgres_connection(direct_connect=True)
-            if conn is None:
-                logger.error("Could not establish PostgreSQL connection to update schema")
-                return False
-            
-            cursor = conn.cursor()
-            
-            # Add photo_url column if it doesn't exist
-            query = f"""
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (
-                    SELECT FROM information_schema.columns 
-                    WHERE table_schema = '{pg_schema}'
-                    AND table_name = '{pg_table}' 
-                    AND column_name = 'photo_url'
-                ) THEN 
-                    ALTER TABLE {pg_schema}.{pg_table} ADD COLUMN photo_url TEXT;
-                END IF;
-            END $$;
-            """
-            
-            cursor.execute(query)
-            conn.commit()
-            cursor.close()
-            
-            logger.info("Added 'photo_url' column to database schema if it didn't exist")
-            return True
-            
+            if conn:
+                cursor = conn.cursor()
+                
+                # Check if the table exists
+                cursor.execute(f"""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = '{pg_schema}' 
+                        AND table_name = '{pg_table}'
+                    );
+                """)
+                
+                table_exists = cursor.fetchone()[0]
+                
+                # Create table if it doesn't exist
+                if not table_exists:
+                    logger.info(f"Creating table {pg_schema}.{pg_table}")
+                    cursor.execute(f"""
+                        CREATE TABLE {pg_schema}.{pg_table} (
+                            id SERIAL PRIMARY KEY,
+                            report_id VARCHAR(50) UNIQUE NOT NULL,
+                            report_type VARCHAR(100),
+                            all_data TEXT,
+                            urgency VARCHAR(100),
+                            photo_id TEXT,
+                            photo_url TEXT,
+                            photo_path TEXT,
+                            location VARCHAR(255),
+                            user_id BIGINT,
+                            username VARCHAR(100),
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                            status VARCHAR(100) DEFAULT 'Still Missing'
+                        );
+                    """)
+                    conn.commit()
+                # Check if status column exists, and add if it doesn't
+                else:
+                    cursor.execute(f"""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.columns 
+                            WHERE table_schema = '{pg_schema}' 
+                            AND table_name = '{pg_table}'
+                            AND column_name = 'status'
+                        );
+                    """)
+                    
+                    status_column_exists = cursor.fetchone()[0]
+                    
+                    if not status_column_exists:
+                        logger.info(f"Adding 'status' column to {pg_schema}.{pg_table}")
+                        cursor.execute(f"""
+                            ALTER TABLE {pg_schema}.{pg_table}
+                            ADD COLUMN status VARCHAR(100) DEFAULT 'Still Missing';
+                        """)
+                        conn.commit()
+                
+                cursor.close()
+                return True
+                
+        return False
     except Exception as e:
-        logger.error(f"Error ensuring schema exists: {str(e)}")
+        logger.error(f"Error ensuring schema exists: {str(e)}", exc_info=True)
         return False
 
 # Function to check DNS resolution before attempting connection
@@ -380,33 +401,32 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
     # Try using the Supabase REST API first
     try:
         if is_db_ready():
-            # Prepare data for database
-            db_data = {
-                "report_id": report_data["report_id"],
-                "report_type": report_data["report_type"],
-                "all_data": report_data["all_data"],
-                "urgency": report_data["urgency"],
-                "location": report_data.get("location", "Unknown"),
-                "photo_id": report_data.get("photo_id"),  # Use get to avoid KeyError
-                "photo_url": report_data.get("photo_url"),
-                "photo_path": report_data.get("photo_path")
+            # Create data dictionary with all fields
+            data = {
+                'report_id': report_data['report_id'],
+                'report_type': report_data['report_type'],
+                'all_data': report_data['all_data'],
+                'urgency': report_data['urgency'],
+                'photo_id': report_data.get('photo_id'),
+                'photo_url': report_data.get('photo_url'),
+                'photo_path': report_data.get('photo_path'),
+                'location': report_data.get('location', 'Unknown'),
+                'user_id': telegram_user.id,
+                'username': telegram_user.username,
+                'created_at': datetime.now().isoformat(),
+                'updated_at': datetime.now().isoformat(),
+                'status': report_data.get('status', 'Still Missing')  # Set default status
             }
+            
+            response = supabase.table(pg_table).insert(data).execute()
+            
+            if response.data:
+                logger.info(f"Successfully saved report {report_data['report_id']} to database")
+                return data
+            else:
+                logger.error(f"Failed to save report to database: {response.error}")
+                return None
                 
-            # Add user information
-            db_data.update({
-                "user_id": telegram_user.id,
-                "username": telegram_user.username,
-                "first_name": telegram_user.first_name,
-                "last_name": telegram_user.last_name,
-                "created_at": datetime.now().isoformat()
-            })
-            
-            # Insert into database using Supabase
-            response = supabase.table(pg_table).insert(db_data).execute()
-            
-            if len(response.data) > 0:
-                logger.info(f"Report saved successfully with ID: {report_data['report_id']} via Supabase")
-                return response.data[0]
     except Exception as e:
         logger.warning(f"Error saving report via Supabase: {str(e)}. Trying direct PostgreSQL connection...")
     
@@ -426,6 +446,7 @@ def save_report(report_data: Dict[str, Any], telegram_user: Any) -> Optional[Dic
                 "photo_url": report_data.get("photo_url"),
                 "photo_path": report_data.get("photo_path"),
                 "user_id": telegram_user.id,
+                "status": report_date.get("status"),
                 "username": telegram_user.username,
                 "first_name": telegram_user.first_name,
                 "last_name": telegram_user.last_name,
@@ -764,3 +785,170 @@ def close_connections():
             logger.error(f"Error closing PostgreSQL connection: {str(e)}")
         finally:
             pg_conn = None
+
+async def update_report_status_in_db(report_id: str, status: str, user_id: int) -> bool:
+    """Update the status of a report in the database."""
+    try:
+        # Make sure we have a valid status value
+        if not status or status == 'No status set' or status == 'N/A':
+            status = "Still Missing"
+        # Try using Supabase first
+        if is_db_ready():
+            try:
+                # First, verify the user owns this report
+                verification = supabase.table(pg_table).select("*").eq("report_id", report_id).eq("user_id", user_id).execute()
+                
+                if not verification.data:
+                    logger.warning(f"User {user_id} attempted to update report {report_id} but is not the owner")
+                    return False
+                
+                # Update the status
+                response = supabase.table(pg_table).update({"status": status}).eq("report_id", report_id).execute()
+                
+                if response.data:
+                    logger.info(f"Successfully updated status of report {report_id} to {status}")
+                    
+                    # Also update in-memory copy if exists
+                    if report_id in REPORTS:
+                        REPORTS[report_id]['status'] = status
+                        
+                    return True
+                else:
+                    logger.warning(f"No rows updated for report {report_id}")
+                    return False
+            except Exception as e:
+                logger.error(f"Supabase error updating report status: {str(e)}")
+                # Fall through to direct PostgreSQL connection
+        
+        # Try direct PostgreSQL connection
+        conn = get_postgres_connection(direct_connect=True)
+        if conn is None:
+            logger.error("Could not establish PostgreSQL connection")
+            
+            # Update in-memory storage as a last resort
+            if report_id in REPORTS:
+                # Verify ownership
+                if REPORTS[report_id].get('user_id') == user_id:
+                    REPORTS[report_id]['status'] = status
+                    logger.info(f"Updated in-memory report {report_id} status to {status}")
+                    return True
+                else:
+                    logger.warning(f"User {user_id} attempted to update report {report_id} but is not the owner")
+                    return False
+            return False
+        
+        cursor = conn.cursor()
+        
+        # Verify ownership first
+        cursor.execute(
+            f"SELECT report_id FROM {pg_schema}.{pg_table} WHERE report_id = %s AND user_id = %s",
+            (report_id, user_id)
+        )
+        
+        if not cursor.fetchone():
+            logger.warning(f"User {user_id} attempted to update report {report_id} but is not the owner")
+            cursor.close()
+            return False
+        
+        # Update status
+        cursor.execute(
+            f"UPDATE {pg_schema}.{pg_table} SET status = %s, updated_at = %s WHERE report_id = %s",
+            (status, datetime.now().isoformat(), report_id)
+        )
+        
+        conn.commit()
+        affected_rows = cursor.rowcount
+        cursor.close()
+        
+        if affected_rows > 0:
+            logger.info(f"Successfully updated status of report {report_id} to {status} via direct PG connection")
+            return True
+        else:
+            logger.warning(f"No rows updated for report {report_id} via direct PG connection")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error updating report status: {str(e)}")
+        return False
+
+async def update_existing_reports_status():
+    """Update all existing reports that don't have a status to 'Still Missing'"""
+    try:
+        logger.info("Starting update of existing reports without status...")
+        
+        # Try with Supabase first
+        if is_db_ready():
+            try:
+                # First get reports without status
+                response = supabase.table(pg_table).select("report_id").is_("status", "null").execute()
+                
+                if not response.data:
+                    logger.info("No reports found without status in Supabase")
+                else:
+                    # Update each report
+                    count = len(response.data)
+                    logger.info(f"Found {count} reports without status in Supabase, updating...")
+                    
+                    for report in response.data:
+                        report_id = report.get('report_id')
+                        update_response = supabase.table(pg_table).update({
+                            "status": "Still Missing", 
+                            "updated_at": datetime.now().isoformat()
+                        }).eq("report_id", report_id).execute()
+                        
+                        if update_response.data:
+                            logger.info(f"Updated report {report_id} status to 'Still Missing'")
+                        else:
+                            logger.warning(f"Failed to update report {report_id}")
+                            
+                    logger.info(f"Completed updating {count} reports")
+                    return
+            except Exception as e:
+                logger.error(f"Error updating reports via Supabase: {str(e)}")
+                # Fall through to direct PostgreSQL
+        
+        # Try direct PostgreSQL connection
+        conn = get_postgres_connection(direct_connect=True)
+        if conn is None:
+            logger.error("Could not establish PostgreSQL connection")
+            return
+            
+        cursor = conn.cursor()
+        
+        # First, check if the status column exists
+        cursor.execute(f"""
+            SELECT EXISTS (
+                SELECT FROM information_schema.columns 
+                WHERE table_schema = 'public' 
+                AND table_name = '{pg_table}'
+                AND column_name = 'status'
+            );
+        """)
+        
+        status_column_exists = cursor.fetchone()[0]
+        
+        if not status_column_exists:
+            logger.info(f"Adding 'status' column to {pg_table}")
+            cursor.execute(f"""
+                ALTER TABLE {pg_table}
+                ADD COLUMN status VARCHAR(100) DEFAULT 'Still Missing';
+            """)
+            conn.commit()
+            logger.info("Status column added with default value 'Still Missing'")
+        else:
+            # Update existing NULL values
+            cursor.execute(f"""
+                UPDATE {pg_table}
+                SET status = 'Still Missing', updated_at = %s
+                WHERE status IS NULL OR status = 'No status set' OR status = 'N/A';
+            """, (datetime.now().isoformat(),))
+            
+            count = cursor.rowcount
+            conn.commit()
+            logger.info(f"Updated {count} reports with NULL or invalid status to 'Still Missing'")
+            
+        cursor.close()
+        logger.info("Update completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Error updating existing reports: {str(e)}", exc_info=True)
