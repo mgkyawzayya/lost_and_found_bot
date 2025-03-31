@@ -22,7 +22,8 @@ from config.states import (
     COLLECT_NAME, COLLECT_AGE, COLLECT_GENDER, COLLECT_DESCRIPTION, 
     COLLECT_LAST_SEEN_LOCATION, COLLECT_LAST_SEEN_TIME, COLLECT_MEDICAL_INFO,
     COLLECT_CONTACT_INFO, COLLECT_EXACT_LOCATION, COLLECT_PEOPLE_COUNT,
-    COLLECT_INJURIES, COLLECT_BUILDING_CONDITION, COLLECT_RELATIONSHIP, COLLECT_CURRENT_LOCATION, COLLECT_CUSTOM_COORDINATES
+    COLLECT_INJURIES, COLLECT_BUILDING_CONDITION, COLLECT_RELATIONSHIP, COLLECT_CURRENT_LOCATION, COLLECT_CUSTOM_COORDINATES,
+    COLLECT_HELP_TYPE
 )
 
 # Configure logger
@@ -666,6 +667,22 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return PHOTO
 
+async def handle_contact_reporter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle contact reporter request."""
+    # Clear previous data
+    if 'matching_reports' in context.user_data:
+        del context.user_data['matching_reports']
+    if 'contact_report' in context.user_data:
+        del context.user_data['contact_report']
+    if 'contact_report_id' in context.user_data:
+        del context.user_data['contact_report_id']
+    
+    await update.message.reply_text(
+        "ဆက်သွယ်လိုသည့် အစီရင်ခံစာနံပါတ် (ID) ကို ရိုက်ထည့်ပါ။\n\n"
+        "Please enter the report ID of the submitter you want to contact:"
+    )
+    return SEND_MESSAGE_TO_REPORTER
+
 async def handle_skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle skipping the photo."""
     try:
@@ -736,7 +753,9 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 "❌ No report found with that ID. Please check and try again.\n\n"
                 "ထို ID ဖြင့် အစီရင်ခံစာ မတွေ့ရှိပါ။ စစ်ဆေးပြီး ထပ်စမ်းကြည့်ပါ။"
             )
-            return ConversationHandler.END
+            # Return to main menu after showing error
+            await show_main_menu(update, context)
+            return CHOOSING_REPORT_TYPE
         
         # Log the report data structure for debugging
         logger.info(f"Report found: {type(report)} with keys: {report.keys() if isinstance(report, dict) else 'Not a dict'}")
@@ -819,103 +838,9 @@ async def search_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await update.message.reply_text(
             "❌ An error occurred while retrieving the report information. Please try again later."
         )
-        return ConversationHandler.END
-
-async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Send a message to the submitter of a report."""
-    try:
-        if 'contact_report_id' not in context.user_data:
-            report_id = update.message.text.strip().upper()
-            
-            try:
-                # Get report from database (using get_report instead of get_report_by_id for consistency)
-                report = await get_report(report_id)
-                
-                if not report:
-                    # Check in-memory backup
-                    if report_id in REPORTS:
-                        # Use in-memory data if available
-                        memory_report = REPORTS[report_id]
-                        user_id = memory_report.get('user_id')
-                        if not user_id:
-                            await update.message.reply_text(
-                                f"❌ No user ID associated with in-memory report {report_id}. Cannot send message."
-                            )
-                            return ConversationHandler.END
-                            
-                        context.user_data['contact_report_id'] = report_id
-                        context.user_data['contact_user_id'] = user_id
-                        
-                        await update.message.reply_text(
-                            f"✅ Report found in temporary storage! Please type your message to send to the submitter of report {report_id}:"
-                        )
-                        return DESCRIPTION
-                    
-                    # No report found in DB or memory
-                    logger.warning(f"No report found with ID: {report_id}")
-                    await update.message.reply_text(
-                        f"❌ No report found with ID: {report_id}. Please check the ID and try again."
-                    )
-                    return ConversationHandler.END
-                
-                # Report found in database
-                user_id = report.get('user_id')
-                if not user_id:
-                    logger.warning(f"Report {report_id} found but no user_id associated")
-                    await update.message.reply_text(
-                        f"❌ No user ID associated with report {report_id}. Cannot send message to the submitter."
-                    )
-                    return ConversationHandler.END
-                    
-                context.user_data['contact_report_id'] = report_id
-                context.user_data['contact_user_id'] = user_id
-                
-                logger.info(f"Found report {report_id} with user_id {user_id}, proceeding to message step")
-                await update.message.reply_text(
-                    f"✅ Report found! Please type your message to send to the submitter of report {report_id}:"
-                )
-                return DESCRIPTION
-                
-            except Exception as e:
-                logger.error(f"Error finding report submitter: {str(e)}", exc_info=True)
-                await update.message.reply_text(
-                    f"❌ Error finding report with ID: {report_id}. Please try again later."
-                )
-                return ConversationHandler.END
-        else:
-            # Get the message content
-            message_text = update.message.text
-            report_id = context.user_data['contact_report_id']
-            user_id = context.user_data['contact_user_id']
-            
-            try:
-                # Forward the message to the report submitter
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"*Message regarding your report {report_id}*:\n\n{message_text}\n\n"
-                         f"From: {update.effective_user.first_name} {update.effective_user.last_name or ''}",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-                
-                # Confirm to the sender
-                await update.message.reply_text(
-                    f"✅ Your message has been sent to the submitter of report {report_id}."
-                )
-            except Exception as e:
-                logger.error(f"Error sending message to submitter: {str(e)}")
-                await update.message.reply_text(
-                    "❌ There was an error sending your message. The user may have blocked the bot."
-                )
-            
-            # Clear the data and end the conversation
-            context.user_data.clear()
-            return ConversationHandler.END
-    except Exception as e:
-        logger.error(f"Unexpected error in send_message_to_submitter: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            "❌ An unexpected error occurred. Please try again or use /start to begin a new operation."
-        )
-        return ConversationHandler.END
+        # Always return to main menu
+        await show_main_menu(update, context)
+        return CHOOSING_REPORT_TYPE
 
 async def search_missing_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Search for missing persons based on name or details"""
@@ -929,7 +854,9 @@ async def search_missing_person(update: Update, context: ContextTypes.DEFAULT_TY
             "❌ No missing persons found matching your search criteria.\n\n"
             "သင့်ရှာဖွေမှုနှင့် ကိုက်ညီသည့် ပျောက်ဆုံးနေသူများ မတွေ့ရှိပါ။"
         )
-        return ConversationHandler.END
+        # Return to main menu if no results
+        await show_main_menu(update, context)
+        return CHOOSING_REPORT_TYPE
     
     # Show results
     response = f"🔍 *Search Results:*\nFound {len(results)} matching records.\n\n"
@@ -940,7 +867,7 @@ async def search_missing_person(update: Update, context: ContextTypes.DEFAULT_TY
         all_data = report.get('all_data', '')
         lines = all_data.split('\n')
         for line in lines:
-            if line.startswith("1.") or "name" in line.lower():
+            if line.startswith("1.") or "name" in line.lower() or "အမည်" in line:
                 name = line.split(":", 1)[1].strip() if ":" in line else line.split(".", 1)[1].strip() if "." in line else line
                 break
         
@@ -951,12 +878,297 @@ async def search_missing_person(update: Update, context: ContextTypes.DEFAULT_TY
     response += "To view full details of a report, search by its ID using 'Search Reports by ID'."
     
     await update.message.reply_text(response, parse_mode='MARKDOWN')
-    return CHOOSING_REPORT_TYPE        
+    
+    # Always return to main menu after showing results
+    await asyncio.sleep(2)
+    await show_main_menu(update, context)
+    return CHOOSING_REPORT_TYPE
+
+async def update_report_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle update report status request."""
+    report_id = update.message.text.strip().upper()
+    
+    try:
+        logger.info(f"Looking for report with ID: {report_id} to update status")
+        
+        # Get report from database
+        report = await get_report(report_id)
+        
+        if not report:
+            # Check in-memory backup
+            if report_id in REPORTS:
+                report = REPORTS[report_id]
+            else:
+                logger.info(f"No report found with ID: {report_id}")
+                await update.message.reply_text(
+                    "❌ No report found with that ID. Please check and try again.\n\n"
+                    "ထို ID ဖြင့် အစီရင်ခံစာ မတွေ့ရှိပါ။ စစ်ဆေးပြီး ထပ်စမ်းကြည့်ပါ။"
+                )
+                # Return to main menu if no report found
+                await show_main_menu(update, context)
+                return CHOOSING_REPORT_TYPE
+        
+        # Get the owner's user ID 
+        owner_id = report.get('user_id')
+        
+        # Check if user is the report owner
+        if owner_id != update.effective_user.id:
+            logger.warning(f"User {update.effective_user.id} attempted to update report {report_id} owned by user {owner_id}")
+            
+            # Get your Telegram ID for comparison
+            your_id = update.effective_user.id
+            
+            await update.message.reply_text(
+                f"❌ You can only update reports that you submitted.\n\n"
+                f"This report (ID: {report_id}) belongs to user with ID: {owner_id}\n"
+                f"Your user ID is: {your_id}\n\n"
+                f"သင်တင်သွင်းခဲ့သော အစီရင်ခံစာများကိုသာ ပြင်ဆင်နိုင်ပါသည်။\n"
+                f"ဤအစီရင်ခံစာသည် အသုံးပြုသူ ID: {owner_id} ၏ ပိုင်ဆိုင်မှုဖြစ်သည်။"
+            )
+            # Return to main menu if not the owner
+            await show_main_menu(update, context)
+            return CHOOSING_REPORT_TYPE
+        
+        # Store report for later use
+        context.user_data['updating_report'] = report
+        context.user_data['updating_report_id'] = report_id
+        
+        # Get current status, defaulting to "Still Missing" if not set
+        current_status = report.get('status')
+        if not current_status or current_status == 'No status set':
+            current_status = "Still Missing"
+            # Update the report object to include this default
+            report['status'] = current_status
+        
+        # Create keyboard with status options
+        keyboard = [
+            ["ပျောက်ဆုံးဆဲ (Still Missing)"],
+            ["တွေ့ရှိပြီ (Found)"],
+            ["ဆေးရုံရောက်ရှိနေ (Hospitalized)"],
+            ["ကျဆုံးသွားပြီ (Deceased)"],
+            ["အခြား (Other)"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard, 
+            one_time_keyboard=True, 
+            resize_keyboard=True
+        )
+
+        await update.message.reply_text(
+            f"လက်ရှိအခြေအနေ: *{current_status}*\n\n"
+            f"အစီရင်ခံစာ {report_id} အတွက် အခြေအနေအသစ်ကို ရွေးချယ်ပါ:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+        
+        return CHOOSE_STATUS
+        
+    except Exception as e:
+        logger.error(f"Error in update_report_status: {str(e)}", exc_info=True)
+        await update.message.reply_text(
+            "❌ An error occurred while retrieving the report. Please try again later."
+        )
+        # Return to main menu on error
+        await show_main_menu(update, context)
+        return CHOOSING_REPORT_TYPE
+
+async def choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle selection of new status."""
+    status_text = update.message.text.strip()
+    report_id = context.user_data.get('updating_report_id')
+    
+    if not report_id:
+        await update.message.reply_text(
+            "❌ Session expired. Please start again."
+        )
+        # Return to main menu if session expired
+        await show_main_menu(update, context)
+        return CHOOSING_REPORT_TYPE
+    
+    # Map Burmese status to database values
+    status_map = {
+        "ပျောက်ဆုံးဆဲ (Still Missing)": "Still Missing",
+        "တွေ့ရှိပြီ (Found)": "Found",
+        "ဆေးရုံရောက်ရှိနေ (Hospitalized)": "Hospitalized",
+        "ကျဆုံးသွားပြီ (Deceased)": "Deceased",
+        "အခြား (Other)": "Other"
+    }
+    
+    # Use English status for database
+    status = status_map.get(status_text, status_text)
+    
+    try:
+        # Update status in database
+        success = await update_report_status_in_db(report_id, status, update.effective_user.id)
+        
+        if success:
+            # Remove keyboard and confirm update
+            reply_markup = ReplyKeyboardRemove()
+            
+            await update.message.reply_text(
+                f"✅ Status of report {report_id} has been updated to: *{status}*\n\n"
+                f"အစီရင်ခံစာ {report_id} ၏ အခြေအနေကို *{status}* သို့ ပြောင်းလဲလိုက်ပါပြီ။",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            
+            # Return to main menu
+            await show_main_menu(update, context)
+            return CHOOSING_REPORT_TYPE
+        else:
+            await update.message.reply_text(
+                "❌ Failed to update report status. Please try again later.\n\n"
+                "အစီရင်ခံစာ အခြေအနေ ပြောင်းလဲခြင်း မအောင်မြင်ပါ။ နောက်မှ ထပ်စမ်းကြည့်ပါ။"
+            )
+            # Return to main menu on failure
+            await show_main_menu(update, context)
+            return CHOOSING_REPORT_TYPE
+            
+    except Exception as e:
+        logger.error(f"Error updating status: {str(e)}", exc_info=True)
+        await update.message.reply_text(
+            "❌ An error occurred while updating the report status. Please try again later."
+        )
+        # Return to main menu on error
+        await show_main_menu(update, context)
+        return CHOOSING_REPORT_TYPE
+
+async def send_message_to_submitter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Send a message to the submitter of a report."""
+    message = update.message.text.strip()
+    report_id = context.user_data.get('contact_report_id')
+    
+    if not report_id:
+        await update.message.reply_text(
+            "❌ Session expired. Please start again."
+        )
+        # Return to main menu if session expired
+        await show_main_menu(update, context)
+        return CHOOSING_REPORT_TYPE
+    
+    try:
+        # Get report from database
+        report = context.user_data.get('contact_report')
+        if not report:
+            report = await get_report(report_id)
+        
+        if not report:
+            await update.message.reply_text(
+                "❌ Error: Report not found. Please try again."
+            )
+            # Return to main menu on error
+            await show_main_menu(update, context)
+            return CHOOSING_REPORT_TYPE
+        
+        # Get the report submitter's user ID
+        user_id = report.get('user_id')
+        
+        if not user_id:
+            await update.message.reply_text(
+                "❌ Unable to send message: The report does not have user contact information."
+            )
+            # Return to main menu on error
+            await show_main_menu(update, context)
+            return CHOOSING_REPORT_TYPE
+        
+        # Send the message to the submitter
+        try:
+            # Format the message to include context - escape special characters for Markdown
+            # Use escape_markdown_v2 from your utils to properly escape characters
+            safe_report_id = escape_markdown_v2(report_id)
+            safe_message = escape_markdown_v2(message)
+            safe_name = escape_markdown_v2(update.effective_user.first_name)
+            safe_username = escape_markdown_v2(update.effective_user.username or 'no_username')
+            
+            formatted_message = (
+                f"*Message regarding your report ID: {safe_report_id}*\n\n"
+                f"{safe_message}\n\n"
+                f"From: {safe_name} (@{safe_username})\n"
+                f"Contact them directly for more information\\."
+            )
+            
+            # Send the message to the submitter
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=formatted_message,
+                parse_mode=ParseMode.MARKDOWN_V2  # Use V2 for better escaping
+            )
+            
+            # Confirm to the sender
+            await update.message.reply_text(
+                f"✅ Your message has been sent to the submitter of report {report_id}."
+            )
+            
+            # Return to main menu
+            await show_main_menu(update, context)
+            return CHOOSING_REPORT_TYPE
+            
+        except Exception as e:
+            logger.error(f"Error sending message to user {user_id}: {str(e)}")
+            await update.message.reply_text(
+                "❌ Failed to send message. The user may have blocked the bot or deleted their account."
+            )
+            # Return to main menu on error
+            await show_main_menu(update, context)
+            return CHOOSING_REPORT_TYPE
+            
+    except Exception as e:
+        logger.error(f"Error in send_message_to_submitter: {str(e)}")
+        await update.message.reply_text(
+            "❌ An error occurred while sending the message. Please try again later."
+        )
+        # Return to main menu on error
+        await show_main_menu(update, context)
+        return CHOOSING_REPORT_TYPE
+
 
 async def choose_report_to_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Let the user choose which report submitter to contact."""
     selection = update.message.text.strip()
     
+    # Check if the message is directly a report ID format (e.g., MDY-3306AD)
+    if "-" in selection and any(prefix in selection.upper() for prefix in ['MDY', 'YGN', 'NPT', 'BGO', 'SGG', 'MGW', 'AYD', 'TNT', 'MON', 'SHN', 'KCH', 'KYH', 'KYN', 'CHN', 'RKH', 'OTHR']):
+        # User has entered a report ID directly, process it instead of expecting a number
+        report_id = selection.upper()
+        
+        try:
+            # Get the report directly using the ID
+            report = await get_report(report_id)
+            
+            if not report:
+                await update.message.reply_text(
+                    f"❌ No report found with ID: {report_id}\n\n"
+                    f"ID: {report_id} နှင့် အစီရင်ခံစာ မတွေ့ရှိပါ။",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+                # Return to main menu
+                await show_main_menu(update, context)
+                return CHOOSING_REPORT_TYPE
+            
+            # Store the report for the next step
+            context.user_data['contact_report'] = report
+            context.user_data['contact_report_id'] = report_id
+            
+            # Ask for message to send
+            await update.message.reply_text(
+                f"✅ Report ID: {report_id} found.\n\n"
+                f"Please enter the message you want to send to the submitter of this report:",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            
+            return SEND_MESSAGE
+        
+        except Exception as e:
+            logger.error(f"Error finding report by ID in choose_report_to_contact: {str(e)}")
+            await update.message.reply_text(
+                "❌ An error occurred while retrieving the report. Please try again later.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            # Return to main menu on error
+            await show_main_menu(update, context)
+            return CHOOSING_REPORT_TYPE
+    
+    # Original number selection logic
     try:
         index = int(selection) - 1
         matching_reports = context.user_data.get('matching_reports', [])
@@ -964,38 +1176,33 @@ async def choose_report_to_contact(update: Update, context: ContextTypes.DEFAULT
         if 0 <= index < len(matching_reports):
             selected_report = matching_reports[index]
             report_id = selected_report['report_id']
-            user_id = selected_report['user_id']
             
+            # Store the selected report for use in the next step
+            context.user_data['contact_report'] = selected_report
             context.user_data['contact_report_id'] = report_id
-            context.user_data['contact_user_id'] = user_id
             
-            # Get more details about the person
-            person_details = ""
-            if 'all_data' in selected_report:
-                # Extract name if possible
-                lines = selected_report['all_data'].split('\n')
-                for line in lines:
-                    if line.lower().startswith("1.") or "name" in line.lower():
-                        person_details = line
-                        break
-            
+            # Ask for message to send
             await update.message.reply_text(
-                f"You're contacting the submitter of report `{report_id}`\n"
-                f"{person_details}\n\n"
-                f"Please write your message. Include your contact information if you want a direct response:",
-                parse_mode=ParseMode.MARKDOWN
+                f"✅ Selected report ID: {report_id}\n\n"
+                f"Please enter the message you want to send to the submitter of this report:",
+                reply_markup=ReplyKeyboardRemove()
             )
-            return DESCRIPTION
+            
+            return SEND_MESSAGE
         else:
             await update.message.reply_text(
-                "Invalid selection. Please choose a number from the list or use /cancel to cancel."
+                "❌ Invalid selection. Please choose a number from the list."
             )
             return SEND_MESSAGE_TO_REPORTER
+            
     except ValueError:
+        # Not a number and not a report ID format
         await update.message.reply_text(
-            "Please enter a number corresponding to the report you want to contact."
+            "Please enter a number corresponding to the report you want to contact, or use a valid report ID format (e.g., MDY-3306AD)."
         )
         return SEND_MESSAGE_TO_REPORTER
+
+        
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show the main menu after report completion"""
@@ -1242,141 +1449,7 @@ def get_s3_client():
         logger.error(f"Error creating S3 client: {str(e)}")
         return None
 
-async def update_report_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle update report status request."""
-    report_id = update.message.text.strip().upper()
-    
-    try:
-        logger.info(f"Looking for report with ID: {report_id} to update status")
-        
-        # Get report from database
-        report = await get_report(report_id)
-        
-        if not report:
-            # Check in-memory backup
-            if report_id in REPORTS:
-                report = REPORTS[report_id]
-            else:
-                logger.info(f"No report found with ID: {report_id}")
-                await update.message.reply_text(
-                    "❌ No report found with that ID. Please check and try again.\n\n"
-                    "ထို ID ဖြင့် အစီရင်ခံစာ မတွေ့ရှိပါ။ စစ်ဆေးပြီး ထပ်စမ်းကြည့်ပါ။"
-                )
-                return ConversationHandler.END
-        
-        # Get the owner's user ID 
-        owner_id = report.get('user_id')
-        
-        # Check if user is the report owner
-        if owner_id != update.effective_user.id:
-            logger.warning(f"User {update.effective_user.id} attempted to update report {report_id} owned by user {owner_id}")
-            
-            # Get your Telegram ID for comparison
-            your_id = update.effective_user.id
-            
-            await update.message.reply_text(
-                f"❌ You can only update reports that you submitted.\n\n"
-                f"This report (ID: {report_id}) belongs to user with ID: {owner_id}\n"
-                f"Your user ID is: {your_id}\n\n"
-                f"သင်တင်သွင်းခဲ့သော အစီရင်ခံစာများကိုသာ ပြင်ဆင်နိုင်ပါသည်။\n"
-                f"ဤအစီရင်ခံစာသည် အသုံးပြုသူ ID: {owner_id} ၏ ပိုင်ဆိုင်မှုဖြစ်သည်။"
-            )
-            return ConversationHandler.END
-        
-        # Store report for later use
-        context.user_data['updating_report'] = report
-        context.user_data['updating_report_id'] = report_id
-        
-        # Get current status, defaulting to "Still Missing" if not set
-        current_status = report.get('status')
-        if not current_status or current_status == 'No status set':
-            current_status = "Still Missing"
-            # Update the report object to include this default
-            report['status'] = current_status
-        
-        # Create keyboard with status options
-        keyboard = [
-            ["ပျောက်ဆုံးဆဲ (Still Missing)"],
-            ["တွေ့ရှိပြီ (Found)"],
-            ["ဆေးရုံရောက်ရှိနေ (Hospitalized)"],
-            ["ကျဆုံးသွားပြီ (Deceased)"],
-            ["အခြား (Other)"]
-        ]
-        reply_markup = ReplyKeyboardMarkup(
-            keyboard, 
-            one_time_keyboard=True, 
-            resize_keyboard=True
-        )
 
-        await update.message.reply_text(
-            f"လက်ရှိအခြေအနေ: *{current_status}*\n\n"
-            f"အစီရင်ခံစာ {report_id} အတွက် အခြေအနေအသစ်ကို ရွေးချယ်ပါ:",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-        
-        return CHOOSE_STATUS
-        
-    except Exception as e:
-        logger.error(f"Error in update_report_status: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            "❌ An error occurred while retrieving the report. Please try again later."
-        )
-        return ConversationHandler.END
-
-async def choose_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle selection of new status."""
-    status_text = update.message.text.strip()
-    report_id = context.user_data.get('updating_report_id')
-    
-    if not report_id:
-        await update.message.reply_text(
-            "❌ Session expired. Please start again."
-        )
-        return ConversationHandler.END
-    
-    # Map Burmese status to database values
-    status_map = {
-        "ပျောက်ဆုံးဆဲ (Still Missing)": "Still Missing",
-        "တွေ့ရှိပြီ (Found)": "Found",
-        "ဆေးရုံရောက်ရှိနေ (Hospitalized)": "Hospitalized",
-        "ကျဆုံးသွားပြီ (Deceased)": "Deceased",
-        "အခြား (Other)": "Other"
-    }
-    
-    # Use English status for database
-    status = status_map.get(status_text, status_text)
-    
-    try:
-        # Update status in database
-        success = await update_report_status_in_db(report_id, status, update.effective_user.id)
-        
-        if success:
-            # Remove keyboard and confirm update
-            reply_markup = ReplyKeyboardRemove()
-            
-            await update.message.reply_text(
-                f"✅ Status of report {report_id} has been updated to: *{status}*\n\n"
-                f"အစီရင်ခံစာ {report_id} ၏ အခြေအနေကို *{status}* သို့ ပြောင်းလဲလိုက်ပါပြီ။",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-            
-            # Return to main menu
-            return await show_main_menu(update, context)
-        else:
-            await update.message.reply_text(
-                "❌ Failed to update report status. Please try again later.\n\n"
-                "အစီရင်ခံစာ အခြေအနေ ပြောင်းလဲခြင်း မအောင်မြင်ပါ။ နောက်မှ ထပ်စမ်းကြည့်ပါ။"
-            )
-            return ConversationHandler.END
-            
-    except Exception as e:
-        logger.error(f"Error updating status: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            "❌ An error occurred while updating the report status. Please try again later."
-        )
-        return ConversationHandler.END
 async def collect_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collect the name of the missing person."""
     name = update.message.text.strip()

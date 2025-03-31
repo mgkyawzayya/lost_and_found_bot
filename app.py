@@ -163,28 +163,28 @@ if hasattr(signal, 'SIGQUIT'):
     signal.signal(signal.SIGQUIT, signal_handler)  # Quit signal
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Start the conversation and display both persistent keyboard and inline menu."""
-    # Set a flag to indicate we're in a conversation
-    context.user_data['in_conversation'] = True
+    """Start the conversation and show main menu."""
+    user = update.effective_user
+    await update.message.reply_text(
+        f"မင်္ဂလာပါ {user.first_name}! \n\n"
+        f"ငလျင်ဘေးအတွက် ကူညီဖော်ရွေဆက်သွယ်ရေး စနစ်သို့ ကြိုဆိုပါသည်။\n\n"
+        f"ကျေးဇူးပြု၍ ဆောင်ရွက်လိုသည့် လုပ်ငန်းကို ရွေးချယ်ပါ:"
+    )
     
-    # Check if Supabase appears to be working
-    connection_warning = ""
-    try:
-        # Try to use a table we know exists instead of health_check
-        test = supabase.table("reports").select("*").limit(1).execute()
-    except Exception as e:
-        logger.error(f"Database connection test failed: {e}")
-        connection_warning = "⚠️ ဒေတာဘေ့စ်ချိတ်ဆက်မှု ပြဿနာများ ရှိနေသည်။ အချို့သော လုပ်ဆောင်ချက်များကို ကန့်သတ်ထားနိုင်သည်။ ⚠️"
+    # Show menu
+    await show_main_menu(update, context)
     
-    # Create a persistent keyboard with Burmese menu options
+    return CHOOSING_REPORT_TYPE
+
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show the main menu keyboard."""
     keyboard = [
         ['လူပျောက်တိုင်မယ်', 'သတင်းပို့မယ်'],
         ['အကူအညီတောင်းမယ်', 'အကူအညီပေးမယ်'],
         ['ID နဲ့ လူရှာမယ်', 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်'],
-        ['နာမည်နဲ့ လူပျောက်ရှာမယ်', 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်']  # Add new option
+        ['နာမည်နဲ့ လူပျောက်ရှာမယ်', 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်']
     ]
     
-    # Set one_time_keyboard=False to make the keyboard persistent
     reply_markup = ReplyKeyboardMarkup(
         keyboard, 
         one_time_keyboard=False,
@@ -192,25 +192,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
 
     await update.message.reply_text(
-        "🚨 ငလျင် အရေးပေါ် တုံ့ပြန်မှု 🚨\n\n"
-        "ဤဘေးအန္တရာယ်ကာလအတွင်း အရေးကြီးသတင်းအချက်အလက်များကို ဖြန့်ဝေရန် အကူအညီပေးမည်။\n\n"
-        "• လူပျောက်/တွေ့ရှိမှုများ အစီရင်ခံရန်\n"
-        "• အကူအညီတောင်းခံရန် သို့မဟုတ် ကမ်းလှမ်းရန်\n"
-        "• လူပျောက်ဆုံးမှု အစီရင်ခံစာများ ရှာဖွေရန်"
-        f"\n\n{connection_warning}\n\n"
-        "လျင်မြန်စွာ လုပ်ဆောင်နိုင်ရန် 👇",
-    )
-    
-    # Send a second message with the keyboard
-    await update.message.reply_text(
-        "အောက်ပါမီနူးမှ ရွေးချယ်ပါ:",
+        "ဆက်လက်၍ မည်သည့်လုပ်ဆောင်ချက်ကို လုပ်ဆောင်လိုပါသလဲ?",
         reply_markup=reply_markup
     )
-    
-    logger.info("User started the bot with Burmese persistent menu active.")
-    logger.info(f"Returning state CHOOSING_REPORT_TYPE: {CHOOSING_REPORT_TYPE}")
-    
-    return CHOOSING_REPORT_TYPE
 
 # Add a new function to handle the initial search request
 async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -498,6 +482,91 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'  # Use 'Markdown' instead of 'MARKDOWN'
     )
 
+# Ensure the function is correctly handling the menu option
+# Ensure the function is correctly handling the menu option
+async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle main menu button selections and route to the appropriate handler."""
+    selection = update.message.text.strip()
+    
+    logger.info(f"Menu selection received: {selection}")
+    
+    # Map button selections to appropriate actions
+    if selection == 'လူပျောက်တိုင်မယ်':
+        context.user_data['report_type'] = 'Missing Person (Earthquake)'
+        return await choose_report_type(update, context)
+        
+    elif selection == 'သတင်းပို့မယ်':
+        context.user_data['report_type'] = 'Found Person (Earthquake)'
+        return await choose_report_type(update, context)
+        
+    elif selection == 'အကူအညီတောင်းမယ်':
+        context.user_data['report_type'] = 'Request Rescue'
+        return await choose_report_type(update, context)
+        
+    elif selection == 'အကူအညီပေးမယ်':
+        context.user_data['report_type'] = 'Offer Help'
+        return await choose_report_type(update, context)
+        
+    elif selection == 'ID နဲ့ လူရှာမယ်':
+        return await handle_search_by_id(update, context)
+        
+    elif selection == 'သတင်းပို့သူ ကို ဆက်သွယ်ရန်':
+        return await handle_contact_reporter(update, context)
+        
+    elif selection == 'နာမည်နဲ့ လူပျောက်ရှာမယ်':
+        return await handle_search_by_name(update, context)
+        
+    elif selection == 'အစီရင်ခံစာအခြေအနေပြင်ဆင်မယ်':
+        return await handle_update_status(update, context)
+        
+    else:
+        # Default case - treat as report type
+        logger.info(f"Unrecognized menu option: {selection}, treating as report_type")
+        context.user_data['report_type'] = selection
+        return await choose_report_type(update, context)
+
+# Add these helper functions for the menu options
+# Helper functions for menu navigation
+async def handle_search_by_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle search by ID request."""
+    await update.message.reply_text(
+        "အစီရင်ခံစာနံပါတ် (ID) ကို ရိုက်ထည့်ပါ။\n\n"
+        "Please enter the report ID:"
+    )
+    return SEARCHING_REPORT
+
+async def handle_contact_reporter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle contact reporter request."""
+    # Clear previous data
+    if 'matching_reports' in context.user_data:
+        del context.user_data['matching_reports']
+    if 'contact_report' in context.user_data:
+        del context.user_data['contact_report']
+    if 'contact_report_id' in context.user_data:
+        del context.user_data['contact_report_id']
+    
+    await update.message.reply_text(
+        "ဆက်သွယ်လိုသည့် အစီရင်ခံစာနံပါတ် (ID) ကို ရိုက်ထည့်ပါ။\n\n"
+        "Please enter the report ID of the submitter you want to contact:"
+    )
+    return SEND_MESSAGE_TO_REPORTER
+
+async def handle_search_by_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle search by name request."""
+    await update.message.reply_text(
+        "ရှာဖွေလိုသော လူပျောက်၏ အမည် သို့မဟုတ် အခြားအသေးစိတ်ကို ရိုက်ထည့်ပါ။\n\n"
+        "Please enter the name or other details of the missing person:"
+    )
+    return SEARCH_MISSING_PERSON
+
+async def handle_update_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle update status request."""
+    await update.message.reply_text(
+        "အခြေအနေပြင်ဆင်လိုသည့် အစီရင်ခံစာနံပါတ် (ID) ကို ရိုက်ထည့်ပါ။\n\n"
+        "Please enter the report ID you want to update:"
+    )
+    return UPDATE_REPORT_STATUS
+
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle media messages outside conversation."""
     await update.message.reply_text(
@@ -547,9 +616,6 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            CHOOSING_REPORT_TYPE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, choose_report_type)
-            ],
             CHOOSING_LOCATION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, choose_location)
             ],
@@ -650,6 +716,9 @@ def main():
             # In the ConversationHandler states dictionary
             COLLECT_CUSTOM_COORDINATES: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, collect_custom_coordinates)
+            ],
+            CHOOSING_REPORT_TYPE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_selection)  # Use handle_menu_selection here
             ],
         },
         fallbacks=[
