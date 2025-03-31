@@ -1,4 +1,4 @@
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, ConversationHandler
 import uuid
@@ -22,7 +22,7 @@ from config.states import (
     COLLECT_NAME, COLLECT_AGE, COLLECT_GENDER, COLLECT_DESCRIPTION, 
     COLLECT_LAST_SEEN_LOCATION, COLLECT_LAST_SEEN_TIME, COLLECT_MEDICAL_INFO,
     COLLECT_CONTACT_INFO, COLLECT_EXACT_LOCATION, COLLECT_PEOPLE_COUNT,
-    COLLECT_INJURIES, COLLECT_BUILDING_CONDITION, COLLECT_RELATIONSHIP, COLLECT_CURRENT_LOCATION
+    COLLECT_INJURIES, COLLECT_BUILDING_CONDITION, COLLECT_RELATIONSHIP, COLLECT_CURRENT_LOCATION, COLLECT_CUSTOM_COORDINATES
 )
 
 # Configure logger
@@ -103,6 +103,7 @@ async def choose_report_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     return CHOOSING_LOCATION
 
+
 async def collect_exact_location_coordinates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle when user shares their location."""
     location = update.message.location
@@ -112,13 +113,53 @@ async def collect_exact_location_coordinates(update: Update, context: ContextTyp
     # Store the exact coordinates
     context.user_data['form_data']['exact_coordinates'] = f"{latitude},{longitude}"
     
+    # Remove keyboard
+    reply_markup = ReplyKeyboardRemove()
+    
     # Acknowledge receipt of location
     await update.message.reply_text(
         f"✅ တိကျသော တည်နေရာလိုင်း {latitude}, {longitude} ကို လက်ခံရရှိပါပြီ။\n\n"
-        "နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန်ကို ရိုက်ထည့်ပါ (ဥပမာ - မတ်လ ၃၀ ရက်၊ ၂၀၂၅၊ နံနက် ၉နာရီ):"
+        f"ဆက်လက်၍ သင့်အစီရင်ခံစာအတွက် အချက်အလက်များကို ကောက်ယူပါမည်။",
+        reply_markup=reply_markup
     )
     
-    return COLLECT_LAST_SEEN_TIME
+    # Get the report type to determine the next step
+    report_type = context.user_data.get('report_type', '')
+    
+    # Start the step-by-step form process based on report type
+    if report_type == 'Missing Person (Earthquake)':
+        await update.message.reply_text(
+            f"ပထမဦးစွာ ပျောက်ဆုံးနေသူ၏ အမည်အပြည့်အစုံကို ရိုက်ထည့်ပါ:",
+            reply_markup=reply_markup
+        )
+        return COLLECT_NAME
+    elif report_type == 'Found Person (Earthquake)':
+        await update.message.reply_text(
+            f"ပထမဦးစွာ တွေ့ရှိထားသူ၏ အမည်ကို ရိုက်ထည့်ပါ (မသိပါက 'အမည်မသိ' ဟု ရိုက်ထည့်ပါ):",
+            reply_markup=reply_markup
+        )
+        return COLLECT_NAME
+    elif report_type == 'Request Rescue':
+        await update.message.reply_text(
+            f"ပထမဦးစွာ ပိတ်မိနေသူ အရေအတွက်ကို ရိုက်ထည့်ပါ (ဥပမာ - ၃ ဦး, 4 people):",
+            reply_markup=reply_markup
+        )
+        return COLLECT_PEOPLE_COUNT
+    elif report_type == 'Offer Help':
+        await update.message.reply_text(
+            f"ပထမဦးစွာ သင့်အမည်ကို ရိုက်ထည့်ပါ:",
+            reply_markup=reply_markup
+        )
+        return COLLECT_NAME
+    else:
+        # Get instructions based on report type
+        instructions = get_instructions_by_type(report_type)
+        
+        await update.message.reply_text(
+            f"{instructions}",
+            reply_markup=reply_markup
+        )
+        return COLLECTING_DATA
 
 async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle location selection for all report types with step-by-step forms."""
@@ -168,64 +209,44 @@ async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Initialize the form data dictionary
     context.user_data['form_data'] = {}
     
-    # Remove keyboard to hide location selector buttons
-    reply_markup = ReplyKeyboardRemove()
+    # Create keyboard with location sharing options
+    keyboard = [
+        [KeyboardButton(text="📍 လက်ရှိတည်နေရာကိုပို့မည်", request_location=True)],
+        ["📌 တည်နေရာနံပါတ်ရိုက်ထည့်မည်"],  # Option to manually enter coordinates
+        ["တည်နေရာပို့စရာမလိုပါ"]  # Skip location
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     
     # Store the report type for reference in subsequent steps
     report_type = context.user_data.get('report_type', '')
     
-    # Start the step-by-step form process based on report type
+    # Prepare instructions based on report type
     if report_type == 'Missing Person (Earthquake)':
-        # For missing person reports
-        await update.message.reply_text(
-            f"တည်နေရာ {location} အတွက် သင့်အစီရင်ခံစာကို စတင်ပါပြီ။\n\n"
-            f"ပျောက်ဆုံးနေသူနှင့် ပတ်သက်သည့် အချက်အလက်များကို တစ်ဆင့်ချင်းစီ မေးပါမည်။\n\n"
-            f"ပထမဦးစွာ ပျောက်ဆုံးနေသူ၏ အမည်အပြည့်အစုံကို ရိုက်ထည့်ပါ:",
-            reply_markup=reply_markup
-        )
-        return COLLECT_NAME
-        
+        location_instruction = "ပျောက်ဆုံးနေသူ နောက်ဆုံးတွေ့ရှိခဲ့သည့် တည်နေရာ"
     elif report_type == 'Found Person (Earthquake)':
-        # For found person reports
-        await update.message.reply_text(
-            f"တည်နေရာ {location} အတွက် လူတွေ့ရှိမှု အစီရင်ခံစာကို စတင်ပါပြီ။\n\n"
-            f"တွေ့ရှိထားသူနှင့် ပတ်သက်သည့် အချက်အလက်များကို တစ်ဆင့်ချင်းစီ မေးပါမည်။\n\n"
-            f"ပထမဦးစွာ တွေ့ရှိထားသူ၏ အမည်ကို ရိုက်ထည့်ပါ (မသိပါက 'အမည်မသိ' ဟု ရိုက်ထည့်ပါ):",
-            reply_markup=reply_markup
-        )
-        return COLLECT_NAME
-        
+        location_instruction = "လူတွေ့ရှိသည့် တည်နေရာ"
     elif report_type == 'Request Rescue':
-        # For rescue requests
-        await update.message.reply_text(
-            f"တည်နေရာ {location} အတွက် သင့်ကယ်ဆယ်ရေးတောင်းဆိုချက်ကို စတင်ပါပြီ။\n\n"
-            f"ကယ်ဆယ်ရေးအတွက် လိုအပ်သည့် အချက်အလက်များကို တစ်ဆင့်ချင်းစီ မေးပါမည်။\n\n"
-            f"ပထမဦးစွာ ပိတ်မိနေသူ အရေအတွက်ကို ရိုက်ထည့်ပါ (ဥပမာ - ၃ ဦး, 4 people):",
-            reply_markup=reply_markup
-        )
-        return COLLECT_PEOPLE_COUNT
-    
+        location_instruction = "ကယ်ဆယ်ရန်လိုအပ်သည့် တည်နေရာ"
     elif report_type == 'Offer Help':
-        # For help offers
-        await update.message.reply_text(
-            f"တည်နေရာ {location} အတွက် သင့်အကူအညီပေးရန် ကမ်းလှမ်းမှုကို စတင်ပါပြီ။\n\n"
-            f"ကူညီပေးနိုင်မည့် အချက်အလက်များကို တစ်ဆင့်ချင်းစီ မေးပါမည်။\n\n"
-            f"ပထမဦးစွာ သင့်အမည်ကို ရိုက်ထည့်ပါ:",
-            reply_markup=reply_markup
-        )
-        return COLLECT_NAME
-    
-    # Catch-all for any other report types (just in case)
+        location_instruction = "အကူအညီပေးနိုင်သည့် တည်နေရာ"
     else:
-        # Get instructions based on report type
-        instructions = get_instructions_by_type(report_type)
-        
-        await update.message.reply_text(
-            f"တည်နေရာ {location} အတွက် သင့်အစီရင်ခံစာကို စတင်ပါပြီ။\n\n"
-            f"{instructions}",
-            reply_markup=reply_markup
-        )
-        return COLLECTING_DATA
+        location_instruction = "သင့်တိကျသော တည်နေရာ"
+    
+    # Ask for precise location with pin
+    await update.message.reply_text(
+        f"{location} ဒေသရှိ {location_instruction}ကို တိကျစွာ ဖော်ပြရန် -\n\n"
+        f"1️⃣ '📍 လက်ရှိတည်နေရာကိုပို့မည်' - သင့်လက်ရှိတည်နေရာကို တိုက်ရိုက်ပို့ရန်\n\n"
+        f"2️⃣ '📌 တည်နေရာနံပါတ်ရိုက်ထည့်မည်' - တည်နေရာနံပါတ်များကို ရိုက်ထည့်ရန် (Latitude, Longitude)\n\n"
+        f"3️⃣ 'တည်နေရာပို့စရာမလိုပါ' - တည်နေရာနံပါတ် မလိုအပ်ပါက ရွေးချယ်ပါ\n\n"
+        f"---- Instructions in English ----\n"
+        f"To share a precise location in {location}:\n"
+        f"• Use the first button to share your current location\n"
+        f"• Use the second button to enter coordinates manually\n"
+        f"• Choose the third option if you don't want to share coordinates",
+        reply_markup=reply_markup
+    )
+    
+    return COLLECT_EXACT_LOCATION
 
 
 async def collect_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1455,57 +1476,158 @@ async def collect_last_seen_location(update: Update, context: ContextTypes.DEFAU
     
     return COLLECT_EXACT_LOCATION
 
-# Modified collect_exact_location to handle different report types
 async def collect_exact_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collect exact location/map pin if available."""
-    response = update.message.text.strip()
+    choice = update.message.text
     
-    # If they provided a location message with coordinates
-    if hasattr(update.message, 'location') and update.message.location:
-        latitude = update.message.location.latitude
-        longitude = update.message.location.longitude
-        context.user_data['form_data']['exact_coordinates'] = f"{latitude},{longitude}"
+    # Handle user's choice
+    if choice == "📌 တည်နေရာနံပါတ်ရိုက်ထည့်မည်":
+        # User wants to enter coordinates manually
+        await update.message.reply_text(
+            "တည်နေရာကို နံပါတ်အဖြစ် ရိုက်ထည့်ပါ (latitude, longitude)။\n\n"
+            "ဥပမာ: 16.871311, 96.199379\n\n"
+            "တည်နေရာနံပါတ်ရယူရန် Google Map တွင် သင်လိုသည့်တည်နေရာကို ကလစ်နှိပ်ပြီး ပေါ်လာသည့် နံပါတ်များကို ကူးယူပါ (Copy & Paste)။",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        # Switch to a new state for collecting custom coordinates
+        return COLLECT_CUSTOM_COORDINATES
+    
     else:
-        # They chose to skip or don't have exact coordinates
+        # User chose to skip or provided something else
+        context.user_data['form_data']['exact_coordinates'] = "Not provided"
+        
+        # Remove keyboard
+        reply_markup = ReplyKeyboardRemove()
+        
+        # Get the report type to determine the next step
+        report_type = context.user_data.get('report_type', '')
+        
+        # THE KEY FIX: Continue to the next correct step in the flow based on report type
+        if report_type == 'Missing Person (Earthquake)':
+            await update.message.reply_text(
+                "နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန်ကို ရိုက်ထည့်ပါ (ဥပမာ - မတ်လ ၃၀ ရက်၊ ၂၀၂၅၊ နံနက် ၉နာရီ):",
+                reply_markup=reply_markup
+            )
+            return COLLECT_LAST_SEEN_TIME
+            
+        elif report_type == 'Found Person (Earthquake)':
+            await update.message.reply_text(
+                "လက်ရှိတည်နေရာ/အခြေအနေကို ဖော်ပြပါ (ဆေးရုံ၊ ကယ်ဆယ်ရေးစခန်း၊ အမှတ်စသည်):",
+                reply_markup=reply_markup
+            )
+            return COLLECT_CURRENT_LOCATION
+            
+        elif report_type == 'Request Rescue':
+            await update.message.reply_text(
+                "ဒဏ်ရာရရှိမှု သို့မဟုတ် ဆေးဝါးလိုအပ်ချက်များရှိပါက ဖော်ပြပါ (မရှိပါက 'မရှိပါ' ဟု ရိုက်ပါ):",
+                reply_markup=reply_markup
+            )
+            return COLLECT_INJURIES
+        
+        elif report_type == 'Offer Help':
+            await update.message.reply_text(
+                "ပေးဆောင်နိုင်သည့် အကူအညီအမျိုးအစားကို ဖော်ပြပါ (ကယ်ဆယ်ရေး၊ ဆေးဝါး၊ ပစ္စည်းများ စသည်):",
+                reply_markup=reply_markup
+            )
+            return COLLECT_HELP_TYPE
+        
+        else:
+            # Get instructions based on report type
+            instructions = get_instructions_by_type(report_type)
+            
+            await update.message.reply_text(
+                f"{instructions}",
+                reply_markup=reply_markup
+            )
+            return COLLECTING_DATA
+
+async def collect_custom_coordinates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process manually entered coordinates."""
+    coordinates_text = update.message.text.strip()
+    
+    # Try to parse the coordinates - expecting "latitude, longitude" format
+    try:
+        # Basic validation for coordinate format
+        if ',' in coordinates_text:
+            parts = coordinates_text.split(',')
+            if len(parts) == 2:
+                lat = parts[0].strip()
+                lng = parts[1].strip()
+                
+                # Very basic validation
+                try:
+                    float(lat)
+                    float(lng)
+                    # If we got here, the format is valid
+                    context.user_data['form_data']['exact_coordinates'] = f"{lat},{lng}"
+                    
+                    # Acknowledge receipt of coordinates
+                    await update.message.reply_text(
+                        f"✅ တိကျသော တည်နေရာနံပါတ် {lat}, {lng} ကို လက်ခံရရှိပါပြီ။\n\n"
+                        f"ဆက်လက်၍ သင့်အစီရင်ခံစာအတွက် အချက်အလက်များကို ကောက်ယူပါမည်။"
+                    )
+                except ValueError:
+                    # If conversion to float fails, it's not a valid coordinate
+                    await update.message.reply_text(
+                        "❌ တည်နေရာနံပါတ်ပုံစံ မမှန်ပါ။ ဥပမာ - 16.871311, 96.199379 ကဲ့သို့ ရိုက်ထည့်ပါ။\n\n"
+                        "ဆက်လက်ရန် တည်နေရာကို ကျော်သွားပါမည်။",
+                    )
+                    context.user_data['form_data']['exact_coordinates'] = "Not provided"
+            else:
+                await update.message.reply_text(
+                    "❌ တည်နေရာနံပါတ်ပုံစံ မမှန်ပါ။\n\n"
+                    "ဆက်လက်ရန် တည်နေရာကို ကျော်သွားပါမည်။",
+                )
+                context.user_data['form_data']['exact_coordinates'] = "Not provided"
+        else:
+            await update.message.reply_text(
+                "❌ တည်နေရာနံပါတ်ပုံစံ မမှန်ပါ။ ကော်မာ (,) ပါရမည်။\n\n"
+                "ဆက်လက်ရန် တည်နေရာကို ကျော်သွားပါမည်။",
+            )
+            context.user_data['form_data']['exact_coordinates'] = "Not provided"
+    except Exception as e:
+        logger.error(f"Error parsing custom coordinates: {str(e)}")
+        await update.message.reply_text(
+            "❌ တည်နေရာနံပါတ် စစ်ဆေးရာတွင် အမှားအယွင်းရှိပါသည်။\n\n"
+            "ဆက်လက်ရန် တည်နေရာကို ကျော်သွားပါမည်။",
+        )
         context.user_data['form_data']['exact_coordinates'] = "Not provided"
     
-    # Get the report type to determine the next step
+    # Move to the next step based on report type
     report_type = context.user_data.get('report_type', '')
-    
-    # Proceed to the appropriate next step based on report type
-    reply_markup = ReplyKeyboardRemove()
     
     if report_type == 'Missing Person (Earthquake)':
         await update.message.reply_text(
-            "နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန်ကို ရိုက်ထည့်ပါ (ဥပမာ - မတ်လ ၃၀ ရက်၊ ၂၀၂၅၊ နံနက် ၉နာရီ):",
-            reply_markup=reply_markup
+            "ပျောက်ဆုံးနေသူ၏ အမည်အပြည့်အစုံကို ရိုက်ထည့်ပါ:"
         )
-        return COLLECT_LAST_SEEN_TIME
+        return COLLECT_NAME
+        
     elif report_type == 'Found Person (Earthquake)':
         await update.message.reply_text(
-            "လက်ရှိတည်နေရာ/အခြေအနေကို ဖော်ပြပါ (ဆေးရုံ၊ ကယ်ဆယ်ရေးစခန်း၊ အမှတ်စသည်):",
-            reply_markup=reply_markup
+            "တွေ့ရှိထားသူ၏ အမည်ကို ရိုက်ထည့်ပါ (မသိပါက 'အမည်မသိ' ဟု ရိုက်ထည့်ပါ):"
         )
-        return COLLECT_CURRENT_LOCATION
+        return COLLECT_NAME
+        
     elif report_type == 'Request Rescue':
         await update.message.reply_text(
-            "ဒဏ်ရာရရှိမှု သို့မဟုတ် ဆေးဝါးလိုအပ်ချက်များရှိပါက ဖော်ပြပါ (မရှိပါက 'မရှိပါ' ဟု ရိုက်ပါ):",
-            reply_markup=reply_markup
+            "ပိတ်မိနေသူ အရေအတွက်ကို ရိုက်ထည့်ပါ (ဥပမာ - ၃ ဦး, 4 people):"
         )
-        return COLLECT_INJURIES
+        return COLLECT_PEOPLE_COUNT
+    
     elif report_type == 'Offer Help':
         await update.message.reply_text(
-            "ပေးဆောင်နိုင်သည့် အကူအညီအမျိုးအစားကို ဖော်ပြပါ (ကယ်ဆယ်ရေး၊ ဆေးဝါး၊ ပစ္စည်းများ စသည်):",
-            reply_markup=reply_markup
+            "သင့်အမည်ကို ရိုက်ထည့်ပါ:"
         )
-        return COLLECT_HELP_TYPE
+        return COLLECT_NAME
+    
     else:
-        # Default path for other report types
+        # Get instructions based on report type
+        instructions = get_instructions_by_type(report_type)
+        
         await update.message.reply_text(
-            "သင့်ဆက်သွယ်ရန်အချက်အလက်ကို ဖော်ပြပါ (ဖုန်းနံပါတ်၊ Telegram ID စသည်):",
-            reply_markup=reply_markup
+            f"{instructions}"
         )
-        return COLLECT_CONTACT_INFO
+        return COLLECTING_DATA
 
 
 async def collect_injuries(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

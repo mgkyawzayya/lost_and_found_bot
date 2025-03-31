@@ -24,7 +24,7 @@ from config.states import (
     COLLECT_LAST_SEEN_LOCATION, COLLECT_LAST_SEEN_TIME, COLLECT_MEDICAL_INFO,
     COLLECT_CONTACT_INFO, COLLECT_EXACT_LOCATION, COLLECT_PEOPLE_COUNT,
     COLLECT_INJURIES, COLLECT_BUILDING_CONDITION, COLLECT_RELATIONSHIP, 
-    COLLECT_CURRENT_LOCATION, COLLECT_HELP_TYPE, COLLECT_RESOURCES, COLLECT_AVAILABILITY
+    COLLECT_CURRENT_LOCATION, COLLECT_HELP_TYPE, COLLECT_RESOURCES, COLLECT_AVAILABILITY, COLLECT_CUSTOM_COORDINATES
 )
 from config.supabase_config import get_supabase_client
 from utils.db_utils import close_connections, update_existing_reports_status
@@ -40,7 +40,8 @@ from handlers.report_handlers import (
     collect_contact_info, collect_exact_location, collect_exact_location_coordinates,
     collect_people_count, collect_injuries, collect_building_condition,
     collect_relationship, collect_current_location,
-    collect_help_type, collect_resources, collect_availability
+    collect_help_type, collect_resources, collect_availability,
+    collect_custom_coordinates
 
 )
 # Import contact handler
@@ -645,6 +646,10 @@ def main():
             ],
             COLLECT_AVAILABILITY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, collect_availability)
+            ],
+            # In the ConversationHandler states dictionary
+            COLLECT_CUSTOM_COORDINATES: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_custom_coordinates)
             ],
         },
         fallbacks=[
