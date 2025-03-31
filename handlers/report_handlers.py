@@ -133,9 +133,12 @@ async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Initialize the form data dictionary
     context.user_data['form_data'] = {}
     
-    # Continue with normal data collection flow
+    # Remove keyboard to hide location selector buttons
+    reply_markup = ReplyKeyboardRemove()
+    
+    # Get the appropriate instructions and example based on report type
     if context.user_data['report_type'] == 'Missing Person (Earthquake)':
-        await update.message.reply_text(
+        instructions = (
             "ပျောက်ဆုံးနေသူနှင့် ပတ်သက်သည့် အချက်အလက်များကို ဖြည့်စွက်ပေးပါ။\n"
             "1. အမည်အပြည့်အစုံ\n"
             "2. အသက်\n"
@@ -145,8 +148,39 @@ async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "6. နောက်ဆုံးတွေ့ရှိခဲ့သည့်အချိန် (ရက်စွဲ/အချိန်)\n"
             "7. သင့်ဆက်သွယ်ရန်အချက်အလက်"
         )
-    elif context.user_data['report_type'] == 'Request Rescue':
+        
+        # Add example for Mandalay
+        if location == "မန္တလေး":
+            example = (
+                "\nဥပမာ:\n"
+                "1. မင်းမင်း\n"
+                "2. ၃၀ နှစ်\n"
+                "3. ကျား\n"
+                "4. ၈၆ လမ်း၊ ၃၈ နှင့် ၃၉ လမ်းကြား၊ မန္တလေးမြို့\n"
+                "5. အရပ် ၅ပေ ၇လက်မ၊ ဆံပင်အတို၊ မျက်မှန်တပ်ထားသူ၊ စကတ်အိတ်ပါသော အနက်ရောင်ဘောင်းဘီဝတ်ဆင်ထားသူ\n"
+                "6. မတ်လ ၃၀ ရက်၊ ၂၀၂၅၊ နံနက် ၉နာရီ\n"
+                "7. ဖုန်း - ၀၉၁၂၃၄၅၆၇၈၉၊ ညီမဖြစ်သူမှ ဆက်သွယ်ခြင်း"
+            )
+        else:
+            example = (
+                "\nဥပမာ:\n"
+                "1. မောင်အောင်\n"
+                "2. ၂၅ နှစ်\n"
+                "3. ကျား\n" 
+                f"4. {location} မြို့ (တိကျသော လိပ်စာဖော်ပြပါ)\n"
+                "5. အရပ် ၅ပေ ၉လက်မ၊ ဆံပင်အနက်၊ ဂျင်းဘောင်းဘီအပြာနှင့် တီရှပ်အနက်ဝတ်ဆင်ထားသူ\n"
+                "6. မတ်လ ၃၀ ရက်၊ ၂၀၂၅၊ နံနက် ၁၀နာရီ\n"
+                "7. ဖုန်း - ၀၉၅၅၅၁၂၃၄၅၆၊ ညီအစ်ကိုဖြစ်သူမှ ဆက်သွယ်ခြင်း"
+            )
+        
         await update.message.reply_text(
+            f"တည်နေရာ {location} အတွက် သင့်အစီရင်ခံစာကို စတင်ပါပြီ။\n\n"
+            f"{instructions}\n{example}",
+            reply_markup=reply_markup
+        )
+        
+    elif context.user_data['report_type'] == 'Request Rescue':
+        instructions = (
             "ကယ်ဆယ်ရေးအတွက် အောက်ပါအချက်အလက်များကို ပေးပါ -\n"
             "1. ပိတ်မိနေသူ အရေအတွက်\n"
             "2. တိကျသော လိပ်စာ/တည်နေရာ\n"
@@ -155,6 +189,36 @@ async def choose_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "5. အရေးပေါ်လိုအပ်ချက်များ (ဆေးဝါး၊ ရေ၊ အစားအစာ)\n"
             "6. သင့်အမည်နှင့် ပိတ်မိနေသူများနှင့် ဆက်နွယ်မှု\n"
             "7. အခြားဆက်သွယ်ရန်နည်းလမ်း"
+        )
+        
+        # Add example for Mandalay
+        if location == "မန္တလေး":
+            example = (
+                "\nဥပမာ:\n"
+                "1. ၃ ဦး (လူကြီး ၂ ဦး၊ ကလေး ၁ ဦး)\n"
+                "2. အမှတ် ၄၅၆၊ ၃၅ လမ်း၊ ၇၆ နှင့် ၇၇ လမ်းကြား၊ မန္တလေးမြို့\n"
+                "3. နှစ်ထပ်အဆောက်အအုံ၏ ပထမထပ်တွင် ပိတ်မိနေပြီး လှေကားပြိုကျ၍ ထွက်မရပါ\n"
+                "4. ကလေးမှာ ခြေတွင် ဒဏ်ရာအနည်းငယ်ရထားပါသည်၊ အခြားသူများမှာ ဒဏ်ရာမရှိပါ\n"
+                "5. ရေနှင့် ကလေးအတွက် ဆေးဝါးလိုအပ်ပါသည်\n"
+                "6. ကျွန်ုပ်အမည် - မင်းမင်း၊ မိသားစုဝင်များနှင့်အတူရှိ\n"
+                "7. ဖုန်း - ၀၉၁၂၃၄၅၆၇၈၉ (ချိတ်ဆက်မှုအားနည်းပါသည်)"
+            )
+        else:
+            example = (
+                "\nဥပမာ:\n"
+                "1. ၄ ဦး (လူကြီး ၂ ဦး၊ ကလေး ၂ ဦး)\n"
+                f"2. {location} မြို့ (တိကျသော လိပ်စာဖော်ပြပါ)\n"
+                "3. အဆောက်အအုံ တစ်စိတ်တစ်ပိုင်း ပြိုကျထား၊ လှေကားကို အပျက်အစီးများက ပိတ်ဆို့နေ\n"
+                "4. အသက်ကြီးသော အမျိုးသမီးတစ်ဦးမှာ နှလုံးရောဂါရှိ၍ ဆေးလိုအပ်ပါသည်\n"
+                "5. ရေ၊ အစားအစာနှင့် ဆေးဝါးအကူအညီလိုအပ်ပါသည်\n"
+                "6. ကျွန်ုပ်အမည် - ကိုဝင်း၊ မိသားစုဝင်များနှင့်အတူရှိ\n"
+                "7. ဖုန်း - ၀၉၈၇၆၅၄၃၂၁၀ (ချိတ်ဆက်မှုအားနည်းပါသည်)"
+            )
+        
+        await update.message.reply_text(
+            f"တည်နေရာ {location} အတွက် သင့်ကယ်ဆယ်ရေးတောင်းဆိုချက်ကို စတင်ပါပြီ။\n\n"
+            f"{instructions}\n{example}",
+            reply_markup=reply_markup
         )
     
     return COLLECTING_DATA
@@ -217,6 +281,7 @@ async def collect_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 def validate_report_data(text: str, report_type: str) -> bool:
     """
     Validate that the provided text contains appropriate report information.
+    More lenient approach to allow valid submissions.
     
     Args:
         text: The text to validate
@@ -225,13 +290,17 @@ def validate_report_data(text: str, report_type: str) -> bool:
     Returns:
         True if the text appears to be valid report data, False otherwise
     """
-    # Skip validation if for some reason report_type is not set
+    # Skip validation if report_type is not set
     if not report_type:
         return True
         
-    # Check if text is too short to be a proper report
-    # Most valid reports should be at least 100 characters
-    if len(text) < 50:
+    # Check for extremely short inputs or just a few words
+    if len(text) < 25:  # Reduced from 50 to 25 characters
+        return False
+    
+    # If the text contains just a few words, it's probably not valid
+    word_count = len(text.split())
+    if word_count < 4:  # Reduced from 5 to 4 words
         return False
     
     # Check for common greetings or simple messages that are definitely not reports
@@ -241,58 +310,48 @@ def validate_report_data(text: str, report_type: str) -> bool:
         "မင်္ဂလာပါ", "နေကောင်းလား", "ဘယ်လိုလဲ", "အကူအညီလိုတယ်", "စမ်းကြည့်တာ"
     ]
     
-    # If the text is just a simple greeting, it's not valid
-    if any(text.lower().strip() == greeting for greeting in common_greetings):
-        return False
-        
-    # If the text contains just a few words, it's probably not valid
-    word_count = len(text.split())
-    if word_count < 5:
+    # Only reject if the text is exactly one of these greetings
+    if text.lower().strip() in common_greetings:
         return False
     
-    # For Missing Person reports, check for required information patterns
+    # For all report types, simply check if there are multiple lines (as in a form response)
+    # or if the text is long enough to be a detailed description
+    if text.count('\n') >= 2 or len(text) > 100:
+        return True
+    
+    # Check for numeric content which is likely to be in all valid reports
+    if bool(re.search(r'\d', text)):
+        return True
+    
+    # More lenient keyword check - if it contains any potentially relevant words based on type
     if "Missing Person" in report_type:
-        # At minimum, we expect to see numbers (like ages) and some location info
-        has_numbers = bool(re.search(r'\d', text))
-        expected_keywords = ["အမည်", "နာမည်", "အသက်", "ကျား", "မ", "တွေ့", "နေရာ", 
-                            "name", "age", "male", "female", "location", "last seen"]
-        
-        # Check if at least a few expected keywords are present
-        keyword_count = sum(1 for keyword in expected_keywords if keyword.lower() in text.lower())
-        
-        return has_numbers and keyword_count >= 2
-    
-    # For Found Person reports
+        keywords = ["အမည်", "နာမည်", "အသက်", "ကျား", "မ", "တွေ့", "နေရာ", "ပျောက်", 
+                   "name", "age", "male", "female", "location", "last seen", "missing"]
     elif "Found Person" in report_type:
-        # Same pattern as missing person, but with slightly different keywords
-        has_numbers = bool(re.search(r'\d', text))
-        expected_keywords = ["တွေ့", "ရှိ", "အသက်", "ကျား", "မ", "နေရာ", "အခြေအနေ",
-                            "found", "location", "condition", "age", "male", "female"]
-        
-        keyword_count = sum(1 for keyword in expected_keywords if keyword.lower() in text.lower())
-        
-        return has_numbers and keyword_count >= 2
-    
-    # For Request Rescue
+        keywords = ["တွေ့", "ရှိ", "အသက်", "ကျား", "မ", "နေရာ", "အခြေအနေ",
+                   "found", "location", "condition", "age", "male", "female"]
     elif "Request Rescue" in report_type:
-        expected_keywords = ["ကယ်", "အကူအညီ", "တည်နေရာ", "လိပ်စာ", "ဒဏ်ရာ", "ပိတ်မိ", "အရေအတွက်",
-                            "rescue", "help", "location", "address", "injured", "trapped", "count", "people"]
-        
-        keyword_count = sum(1 for keyword in expected_keywords if keyword.lower() in text.lower())
-        
-        return keyword_count >= 2
-    
-    # For Offer Help
+        keywords = ["ကယ်", "အကူအညီ", "တည်နေရာ", "လိပ်စာ", "ဒဏ်ရာ", "ပိတ်မိ", "အရေအတွက်",
+                   "rescue", "help", "location", "address", "injured", "trapped", "count", "people"]
     elif "Offer Help" in report_type:
-        expected_keywords = ["ကူညီ", "အကူအညီ", "ပေး", "တည်နေရာ", "ရရှိနိုင်", 
-                            "help", "offer", "provide", "location", "available"]
-        
-        keyword_count = sum(1 for keyword in expected_keywords if keyword.lower() in text.lower())
-        
-        return keyword_count >= 2
+        keywords = ["ကူညီ", "အကူအညီ", "ပေး", "တည်နေရာ", "ရရှိနိုင်", 
+                   "help", "offer", "provide", "location", "available"]
+    else:
+        # For other types, be more lenient
+        return True
     
-    # For any other report type or if we can't determine, default to true
-    return True
+    # Check if ANY of the keywords match, not requiring multiple matches
+    for keyword in keywords:
+        if keyword.lower() in text.lower():
+            return True
+    
+    # If we get here, the text doesn't contain any relevant keywords
+    # But we'll still return True if it's a medium-length message that might be a valid report
+    if len(text) > 75:  # A reasonably long message is likely a report
+        return True
+        
+    # If we reach here, reject the input
+    return False
 
 async def select_urgency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle the selection of urgency level with validation."""
@@ -1095,7 +1154,7 @@ async def send_report_to_channel(bot, user_data: dict, safe_message: str) -> Non
         logger.info(f"Report sent to channel {CHANNEL_ID}")
     except Exception as e:
         logger.error(f"Failed to send report to channel: {str(e)}")
-        
+
 def get_s3_client():
     """Get configured S3 client for DigitalOcean Spaces"""
     try:

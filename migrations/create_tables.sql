@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS reports (
     username VARCHAR,
     first_name VARCHAR,
     last_name VARCHAR,
+    status VARCHAR DEFAULT 'Still Missing',  -- Added status column with default value
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
@@ -39,3 +40,4 @@ CREATE INDEX IF NOT EXISTS idx_reports_report_id ON reports(report_id);
 CREATE INDEX IF NOT EXISTS idx_reports_report_type ON reports(report_type);
 CREATE INDEX IF NOT EXISTS idx_reports_all_data ON reports USING gin(to_tsvector('english', all_data));
 CREATE INDEX IF NOT EXISTS idx_reports_user_id ON reports(user_id);
+CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);  -- Add index for status column
