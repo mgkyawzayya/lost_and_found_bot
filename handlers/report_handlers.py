@@ -1031,10 +1031,11 @@ def format_report_message(user_data: dict, report_id: str, priority_icon: str, t
         location_info = f"📍 <b>LOCATION / တည်နေရာ:</b>\n<code>{user_data['location']}</code>\n\n"
 
     report_type_header = f"{priority_icon} <b>{user_data['report_type'].upper()}</b> {priority_icon}"
-    urgency = report.get('urgency', 'N/A')
-    urgency_emoji = "🔴" if "Critical" in urgency else "🟠" if "High" in urgency else "🟡" if "Medium" in urgency else "🟢"
-    response += f"{urgency_emoji} *Urgency:* {urgency}\n\n"
-
+    
+    # Use user_data instead of report for urgency
+    urgency_level = user_data.get('urgency', 'N/A')
+    urgency_emoji = "🔴" if "Critical" in urgency_level else "🟠" if "High" in urgency_level else "🟡" if "Medium" in urgency_level else "🟢"
+    
     # Format the details with better spacing
     details = user_data['all_data'].strip()
 
