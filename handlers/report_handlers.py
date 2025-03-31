@@ -6,7 +6,7 @@ import logging
 import asyncio
 from datetime import datetime
 import pytz  # Import pytz for timezone handling
-import io
+import io, re
 import boto3
 from botocore.client import Config
 import os
@@ -356,7 +356,7 @@ async def select_urgency(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     return PHOTO
 
-    
+
 async def finalize_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Finalize and save the report to the database"""
     try:
