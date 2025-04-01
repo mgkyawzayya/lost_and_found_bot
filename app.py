@@ -638,10 +638,6 @@ def main():
             COLLECT_LAST_SEEN_LOCATION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, collect_last_seen_location)
             ],
-            COLLECT_EXACT_LOCATION: [
-                MessageHandler(filters.LOCATION, collect_exact_location_coordinates),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_exact_location)
-            ],
             COLLECT_LAST_SEEN_TIME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, collect_last_seen_time)
             ],
@@ -712,10 +708,6 @@ def main():
             ],
             COLLECT_AVAILABILITY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, collect_availability)
-            ],
-            # In the ConversationHandler states dictionary
-            COLLECT_CUSTOM_COORDINATES: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_custom_coordinates)
             ],
             CHOOSING_REPORT_TYPE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_selection)  # Use handle_menu_selection here
